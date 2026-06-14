@@ -9,8 +9,8 @@ author:
   medium: "jack_crane"
   location: "the farm"
 
-baseurl: ""
-url: "https://farm.github.io"
+baseurl: "/farm"
+url: "https://unclej4ck.github.io"
 
 # Build
 plugins:
