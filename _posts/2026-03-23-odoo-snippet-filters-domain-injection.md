@@ -5,7 +5,7 @@ subtitle: "the dynamic product filter on /website/snippet/filters ran the visito
 date: 2026-03-23
 tags: [orm-injection, odoo, pre-auth, oracle, bug-bounty]
 category: research
-tldr: "POST /website/snippet/filters is auth='public'. The website_sale dynamic filter takes a caller-supplied search_domain and hands it to sold_products.filtered_domain(domain) on a recordset that still carries superuser rights. Because the domain is evaluated with full read access, relational traversal reaches fields the public user can never see, and the rendered snippet becomes a true/false oracle you can walk character by character with no login. Odoo fixed it by dropping privileges on that path (sudo(False)) and committed to a CVE. Found with Aymane Mazguiti."
+tldr: "POST /website/snippet/filters is auth='public'. The website_sale dynamic filter takes a caller-supplied search_domain and hands it to sold_products.filtered_domain(domain) on a recordset that still carries superuser rights. Because the domain is evaluated with full read access, relational traversal reaches fields the public user can never see, and the rendered snippet becomes a true/false oracle you can walk character by character with no login. Odoo fixed it by dropping privileges on that path (sudo(False)) and committed to a CVE. Found with Ilyase Dehy."
 ---
 
 ## the route nobody thinks of as a query interface
@@ -71,7 +71,7 @@ I confirmed the patched shape in current `19.0` source: the product fetch and th
 
 I rated it High. It is unauthenticated, network-reachable, fully automated, and it reads arbitrary stored fields through relational traversal, which is a confidentiality hit well past what a marketing snippet should ever expose. It is the same class as [CVE-2024-36259](https://nvd.nist.gov/vuln/detail/CVE-2024-36259), the Odoo 17 oracle via crafted RPC search with elevated privileges, except this one needs no authentication and rides a public website route.
 
-Odoo accepted it, shipped the fix across supported branches, and said they will publish a CVE for it. As of writing the CVE is assigned-intent, not yet live, so this stays in research rather than the CVE shelf until the identifier lands. The Odoo 18 report I filed for the same root was archived as a duplicate of the main one. Found with Aymane Mazguiti.
+Odoo accepted it, shipped the fix across supported branches, and said they will publish a CVE for it. As of writing the CVE is assigned-intent, not yet live, so this stays in research rather than the CVE shelf until the identifier lands. The Odoo 18 report I filed for the same root was archived as a duplicate of the main one. Found with Ilyase Dehy.
 
 ## the lesson that generalizes
 

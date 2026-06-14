@@ -5,14 +5,14 @@ subtitle: "one public route in a payment module forgot the authorization its sib
 date: 2026-03-09
 tags: [auth-bypass, odoo, payment, bug-bounty]
 category: research
-tldr: "POST /payment/xendit/payment is auth='public' and never calls check_access_token. With no cookie, no session, and no access token, you name a transaction by its reference and Odoo charges it through Xendit using the merchant's stored secret key. I reproduced it on a fresh odoo:19.0: one unauthenticated request flips a victim transaction from draft to error, and a valid card token would flip it to done and pull the order through fulfillment. Found with Aymane Mazguiti."
+tldr: "POST /payment/xendit/payment is auth='public' and never calls check_access_token. With no cookie, no session, and no access token, you name a transaction by its reference and Odoo charges it through Xendit using the merchant's stored secret key. I reproduced it on a fresh odoo:19.0: one unauthenticated request flips a victim transaction from draft to error, and a valid card token would flip it to done and pull the order through fulfillment. Found with Ilyase Dehy."
 ---
 
 ## how I found it: read the row, find the odd one out
 
 Payment controllers are the best place in a big app to hunt for missing authorization, because every provider implements the same job and you only need one of them to forget the same line. In Odoo the line is `payment_utils.check_access_token(token, reference, amount)`. It is an HMAC keyed on the server's secret, bound to a specific transaction reference and amount, compared in constant time. It exists so that only the browser session that legitimately started a checkout can later tell the server "charge this one."
 
-I lined up the payment controllers and read the route signatures. Authorize.Net checks the token. Adyen's main payment route checks it. Xendit's own return route, in the very same file, checks it. Then the Xendit charge route, three lines long, does not. When one entry in a column of near-identical entries is missing the field they all share, you stop reading and start testing. Found with Aymane Mazguiti.
+I lined up the payment controllers and read the route signatures. Authorize.Net checks the token. Adyen's main payment route checks it. Xendit's own return route, in the very same file, checks it. Then the Xendit charge route, three lines long, does not. When one entry in a column of near-identical entries is missing the field they all share, you stop reading and start testing. Found with Ilyase Dehy.
 
 ## the endpoint, copied out of the running container
 

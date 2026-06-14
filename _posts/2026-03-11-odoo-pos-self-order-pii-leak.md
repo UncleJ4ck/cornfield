@@ -5,14 +5,14 @@ subtitle: "a PII patch that was dead code, then a real patch, and underneath bot
 date: 2026-03-11
 tags: [info-disclosure, odoo, pos, bug-bounty]
 category: research
-tldr: "Scan one restaurant QR code and the POS self-order API hands you the floor plan with no token at all. The email and phone leak got two fixes (the first was literally dead code), and the current odoo:19.0 image does strip them. But the order uuids still leak, and the write path that takes them never checks ownership, so on today's image I rewrote another table's order live: redirected their receipt and pushed their bill from 12.5 to 57.51 with nothing but the shared QR token. Found with Aymane Mazguiti."
+tldr: "Scan one restaurant QR code and the POS self-order API hands you the floor plan with no token at all. The email and phone leak got two fixes (the first was literally dead code), and the current odoo:19.0 image does strip them. But the order uuids still leak, and the write path that takes them never checks ownership, so on today's image I rewrote another table's order live: redirected their receipt and pushed their bill from 12.5 to 57.51 with nothing but the shared QR token. Found with Ilyase Dehy."
 ---
 
 ## the access model, because it is the whole point
 
 POS self-ordering has no accounts and no login. Every table in the restaurant carries a QR code with two values: one `access_token` for the whole point-of-sale config (it says which restaurant you are ordering from, not who you are) and a per-table `identifier`. Every `/pos-self-order/*` endpoint authorizes a caller with `_verify_pos_config(access_token)`, which only checks that the shared config token is valid. Every customer at every table presents the same token. That is by design, nobody wants to make an account to order a burger. It also means the server has to be careful about every field it returns and every write it accepts, because the credential is shared by the whole room.
 
-Found with Aymane Mazguiti. I tested everything below on a fresh `odoo:19.0` (image built 2026-04-21), seeded with five tables and six orders.
+Found with Ilyase Dehy. I tested everything below on a fresh `odoo:19.0` (image built 2026-04-21), seeded with five tables and six orders.
 
 ## the floor plan leaks with no token at all
 
