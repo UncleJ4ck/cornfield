@@ -4,26 +4,27 @@
 $font: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
 
 // cornfield-night black — a faint warm-green undertone, the farm after dusk
-$bg:          #0a0b07;
-$bg-card:     #0e0f0a;
-$bg-lift:     #14150d;
+// lifted a touch off pure black so the field reads, not a void
+$bg:          #0e0f09;
+$bg-card:     #14150e;
+$bg-lift:     #1b1c13;
 
 // fear toxin — sickly chartreuse pulled from the gas and the burlap mask
-$acc:         #aeb82e;
-$acc-light:   #c9d156;
-$acc-dim:     #71791f;
-$acc-faint:   #14160a;
+$acc:         #b3bd33;
+$acc-light:   #ccd45c;
+$acc-dim:     #767e22;
+$acc-faint:   #171a0c;
 
 // burlap straw — the sackcloth, warmth used sparingly
-$straw:       #c2a35f;
+$straw:       #c8aa66;
 
 // bone / parchment
-$text:        #d8d3c1;
-$text-sec:    #8c8878;
-$text-muted:  #47453b;
+$text:        #e2ddcd;
+$text-sec:    #989484;
+$text-muted:  #514f43;
 
-$border:      #16170e;
-$border-mid:  #25261a;
+$border:      #1e1f14;
+$border-mid:  #2e3020;
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -65,9 +66,69 @@ body::after {
   content: '';
   position: fixed;
   inset: 0;
-  background: radial-gradient(120% 90% at 50% 32%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+  background: radial-gradient(120% 90% at 50% 32%, transparent 58%, rgba(0, 0, 0, 0.5) 100%);
   pointer-events: none;
   z-index: 9997;
+}
+
+// the dark farm behind everything — a faint scene with drifting fog
+.atmos {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: $bg;
+}
+
+.atmos-scene {
+  position: absolute;
+  inset: 0;
+  background: url("../img/farm-bg.svg") no-repeat center bottom;
+  background-size: cover;
+  opacity: 0.5;
+  // a near-still breathing so the moon haze feels alive
+  animation: scene-breathe 15s ease-in-out infinite;
+}
+
+.atmos-fog {
+  position: absolute;
+  inset: -14%;
+  will-change: transform;
+}
+
+.atmos-fog--low {
+  background:
+    radial-gradient(48% 36% at 22% 86%, rgba($acc, 0.05), transparent 62%),
+    radial-gradient(42% 30% at 64% 92%, rgba(150, 160, 90, 0.06), transparent 60%),
+    radial-gradient(38% 28% at 88% 84%, rgba($acc, 0.045), transparent 62%);
+  animation: fog-drift-a 48s ease-in-out infinite;
+}
+
+.atmos-fog--mid {
+  background:
+    radial-gradient(40% 30% at 30% 58%, rgba(170, 180, 90, 0.04), transparent 60%),
+    radial-gradient(46% 34% at 76% 50%, rgba($acc, 0.035), transparent 62%);
+  animation: fog-drift-b 69s ease-in-out infinite;
+}
+
+@keyframes fog-drift-a {
+  0%, 100% { transform: translate3d(-5%, 0, 0); }
+  50%      { transform: translate3d(5%, 1.5%, 0); }
+}
+@keyframes fog-drift-b {
+  0%, 100% { transform: translate3d(6%, 0, 0); }
+  50%      { transform: translate3d(-6%, -2%, 0); }
+}
+@keyframes scene-breathe {
+  0%, 100% { opacity: 0.34; }
+  50%      { opacity: 0.46; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atmos-scene,
+  .atmos-fog { animation: none; }
+  .atmos-scene { opacity: 0.4; }
 }
 
 a {
@@ -336,6 +397,37 @@ a {
   flex: 1;
   height: 1px;
   background: $border;
+}
+
+// category section label doubles as a link to the full category page
+a.sh-label {
+  color: $text-muted;
+  transition: color 150ms;
+
+  &:hover { color: $acc; }
+}
+
+.sh-count {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: $text-muted;
+}
+
+.cat-section { margin-bottom: 2.75rem; }
+
+.page-sub {
+  font-size: 0.78rem;
+  color: $text-sec;
+  line-height: 1.65;
+  margin-top: 0.6rem;
+}
+
+.empty-note {
+  font-size: 0.8rem;
+  color: $text-muted;
+  padding: 0.75rem 0;
 }
 
 .post-list {

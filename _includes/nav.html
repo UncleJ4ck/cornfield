@@ -6,15 +6,21 @@
     </button>
     <ul class="nav-links" role="list">
       <li>
-        <a href="{{ '/research' | relative_url }}"
-           {%- if page.url contains '/research' or page.layout == 'post' %} aria-current="page"{% endif %}>
-          research
+        <a href="{{ '/writeups' | relative_url }}"
+           {%- if page.url contains '/writeups' or page.category == 'writeups' %} aria-current="page"{% endif %}>
+          writeups
         </a>
       </li>
       <li>
-        <a href="{{ '/projects' | relative_url }}"
-           {%- if page.url contains '/projects' %} aria-current="page"{% endif %}>
-          projects
+        <a href="{{ '/cves' | relative_url }}"
+           {%- if page.url contains '/cves' or page.category == 'cves' %} aria-current="page"{% endif %}>
+          cves
+        </a>
+      </li>
+      <li>
+        <a href="{{ '/research' | relative_url }}"
+           {%- if page.url contains '/research' or page.category == 'research' %} aria-current="page"{% endif %}>
+          research
         </a>
       </li>
       <li>

@@ -2,6 +2,11 @@
 <html lang="en">
   {%- include head.html -%}
   <body>
+    <div class="atmos" aria-hidden="true">
+      <div class="atmos-scene"></div>
+      <div class="atmos-fog atmos-fog--low"></div>
+      <div class="atmos-fog atmos-fog--mid"></div>
+    </div>
     {%- include nav.html -%}
     <main class="site-main" id="main-content" tabindex="-1">
       {{ content }}

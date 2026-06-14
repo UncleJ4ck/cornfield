@@ -1,0 +1,12 @@
+---
+layout: default
+title: cves
+---
+
+<header class="page-head">
+  <h1>cves</h1>
+  <p class="page-sub">assigned vulnerabilities. how i found them, how they break, how they got fixed.</p>
+</header>
+
+{% assign items = site.posts | where: "category", "cves" %}
+{% include postlist.html posts=items %}

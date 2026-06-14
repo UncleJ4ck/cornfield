@@ -1,0 +1,12 @@
+---
+layout: default
+title: writeups
+---
+
+<header class="page-head">
+  <h1>writeups</h1>
+  <p class="page-sub">field notes from building and breaking. hardware, radio, low-level, the human factor.</p>
+</header>
+
+{% assign items = site.posts | where: "category", "writeups" %}
+{% include postlist.html posts=items %}

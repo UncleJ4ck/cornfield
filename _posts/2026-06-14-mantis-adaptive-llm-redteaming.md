@@ -4,6 +4,7 @@ title: "Mantis"
 subtitle: "an adaptive red-teaming framework that treats jailbreaking as a closed-loop control problem, and the capability gradient it found across 15 models"
 date: 2026-06-14
 tags: [llm, red-team, jailbreak, ai-security, research]
+category: research
 tldr: "I built a three-model loop. One LLM attacks, one defends, two judge. Every round it fingerprints which defense layer blocked the last attempt, picks a counter-strategy from a ladder tuned to that model's architecture, mutates the payload, and goes again. The attacks are not the interesting part. The interesting part is what shows up when you run the same battery against models of increasing capability: aligned models fall to framing in two rounds, Claude only falls to multi-turn accumulation and only after six or more, and o4-mini fell to neither until I wrote strategies aimed at how it actually reasons. Three different failure modes, not three points on one dial. This post is the whole design and all the data, including the runs that embarrassed me."
 ---
 

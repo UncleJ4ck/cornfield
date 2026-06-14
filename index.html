@@ -22,29 +22,23 @@ title: home
   <p class="hero-meta">{{ site.author.location }}</p>
 </section>
 
-<section>
-  <div class="section-head">
-    <span class="sh-label">recent</span>
-    <span class="sh-line" aria-hidden="true"></span>
-  </div>
-
-  <div class="post-list">
-    {% for post in site.posts limit:8 %}
-    <article class="post-stub">
-      <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%Y.%m.%d" }}</time>
-      <a href="{{ post.url | relative_url }}" class="stub-title">{{ post.title }}</a>
-      {% if post.tags.first %}<span class="tag">{{ post.tags.first }}</span>{% endif %}
-    </article>
-    {% endfor %}
-
-    {% if site.posts.size == 0 %}
-    <p style="color: #3f3d3a; font-size: 0.8rem;">no posts yet.</p>
+{% assign cats = "writeups,cves,research" | split: "," %}
+{% for cat in cats %}
+  {% assign all = site.posts | where: "category", cat %}
+  {% if all.size > 0 %}
+  {% assign shown = all | slice: 0, 5 %}
+  <section class="cat-section">
+    <div class="section-head">
+      <a class="sh-label" href="{{ '/' | append: cat | relative_url }}">{{ cat }}</a>
+      <span class="sh-line" aria-hidden="true"></span>
+      <span class="sh-count">{{ all.size | prepend: '0' | slice: -2, 2 }}</span>
+    </div>
+    {% include postlist.html posts=shown %}
+    {% if all.size > 5 %}
+    <a href="{{ '/' | append: cat | relative_url }}" class="view-all-link">view all {{ cat }} →</a>
     {% endif %}
-  </div>
-
-  {% if site.posts.size > 8 %}
-  <a href="{{ '/research' | relative_url }}" class="view-all-link">view all →</a>
+  </section>
   {% endif %}
-</section>
+{% endfor %}
 
 <p class="site-quote">there's nothing to fear but fear itself</p>
