@@ -29,11 +29,15 @@ Before touching hardware, the theory. Any wireless signal encodes data by varyin
 
 For this experiment: ON/OFF Keying (OOK), a degenerate form of AM. Transmitter on = 1, transmitter off = 0. The simplest possible encoding and the most common in cheap IoT devices.
 
+![AM vs FM vs raw signal — OOK is a degenerate AM scheme]({{ '/assets/img/posts/radio-5.png' | relative_url }})
+
 ---
 
 ## hardware setup
 
 ### the transmitter
+
+![RFM12B sub-GHz transceiver module]({{ '/assets/img/posts/radio-2.png' | relative_url }})
 
 **RFM12B** from Hope RF, a sub-GHz transceiver module. Cheap (~$4), well-documented, supported by Arduino via the `JeeLib` library. Operates at 433 MHz, 868 MHz, or 915 MHz depending on region and model.
 
@@ -60,6 +64,8 @@ The antenna is a quarter-wave wire:
 ```
 
 Solder an 86mm wire to the antenna pad. Tolerance of a few millimeters does not matter much at these frequencies.
+
+![Arduino UNO connected to RFM12B via SPI — Fritzing wiring diagram]({{ '/assets/img/posts/radio-8.png' | relative_url }})
 
 ### the Arduino sketch
 
@@ -103,7 +109,11 @@ This sends a 4-byte structured payload at 868 MHz every 500ms. The `counter` fie
 
 ### the receiver: RTL-SDR
 
+![RTL-SDR V3 USB dongle — RTL2832U R820T2 chipset]({{ '/assets/img/posts/radio-3.png' | relative_url }})
+
 The **RTL-SDR** is a repurposed digital TV receiver used as a wideband software-defined radio. Costs $25-30. Covers roughly 25 MHz to 1.7 GHz with some gaps. Enough to see 868 MHz.
+
+![lsusb showing RTL2838 DVB-T device recognized by the OS]({{ '/assets/img/posts/radio-9.png' | relative_url }})
 
 If you have already killed your RTL-SDR (see: the end of this post):
 
@@ -125,6 +135,8 @@ gqrx
 
 Set center frequency to 868.000 MHz. Set sample rate to 2.4 MSPS. Enable the waterfall view (spectrum over time).
 
+![GQRX waterfall centered at 868.000 MHz — signal spike visible on transmission]({{ '/assets/img/posts/radio-10.png' | relative_url }})
+
 When the Arduino transmits, you will see a bright spike in the waterfall repeating every ~500ms. This confirms the hardware works and tells you the exact frequency offset from 868 MHz center.
 
 ### step 2: record IQ samples with GNURadio
@@ -138,6 +150,8 @@ sample rate: 2.4M     type: complex float32
 gain: 40 dB           unbuffered: yes
 ```
 
+![GNURadio Companion flowgraph: RTL-SDR Source → Complex to Mag² → Wav File Sink + waterfall sinks]({{ '/assets/img/posts/radio-11.png' | relative_url }})
+
 Run for 10-15 seconds while the Arduino transmits. Stop. The file contains raw complex (IQ) samples representing the full band around 868 MHz. It is not demodulated yet, just raw RF energy as a stream of `(float32 I, float32 Q)` pairs.
 
 File size: 2.4M samples/s x 8 bytes/sample x 10s = ~192 MB
@@ -150,6 +164,8 @@ inspectrum capture.bin -r 2400000
 ```
 
 Set the sample rate to 2.4 MSPS in the UI. The spectrogram view shows frequency on the Y axis and time on the X axis. You should see the OOK signal: a repeated pattern of bright (transmitter on) and dark (transmitter off) blocks.
+
+![Inspectrum spectrogram showing the captured 868 MHz OOK signal]({{ '/assets/img/posts/radio-12.png' | relative_url }})
 
 Enable the power threshold. Inspectrum shows a red/green overlay indicating where the signal crosses the threshold. This is your bit stream.
 
@@ -264,3 +280,5 @@ The RTL-SDR has no recovery from a blown LNA. Buy a new one and add the attenuat
 - [JeeLib Arduino Library](https://github.com/jcw/jeelib)
 - [Signal Identification Guide](https://www.sigidwiki.com/)
 - [RTL-SDR protection circuits](https://www.rtl-sdr.com/protecting-your-sdr-from-strong-signals/)
+
+![Kilroy was here]({{ '/assets/img/posts/radio-13.png' | relative_url }})

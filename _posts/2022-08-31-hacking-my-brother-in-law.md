@@ -9,6 +9,8 @@ tldr: "Spent hours trying to hack my brother's WiFi technically. Walked past his
 
 ## chapter 1: wolves and sheep
 
+![hacker meme]({{ '/assets/img/posts/social-1.png' | relative_url }})
+
 Social engineering is basically, instead of using technological vulnerabilities, you use other techniques related to your way of speaking, your way of sneaking around, and in general related to the human factor to extract and gain access to people's confidential information. It's like the old story of the wolf and the sheep, when the wolf is wearing a costume and trying to take advantage of the little sheep when their mother isn't around. We use some "useless" stuff and take advantage over humans.
 
 There is a cycle that makes the social engineering algorithm simple:
@@ -20,6 +22,8 @@ There is a cycle that makes the social engineering algorithm simple:
 3. **Play**: once you get the victim's trust and they believe you are a good friend, you start manipulating them to get what you want. Extracting information, taking advantage.
 
 4. **Exit**: when the wolf ate the sheep, he got rid of the costume and started looking for another prey. Same thing. You cut the connections. But here is the trick: don't cut it directly, because they will feel that something strange happened. Start disappearing slowly, answer messages later, give excuses. They will think you are just busy.
+
+![Social Engineering Life Cycle: Investigation → Hook → Play → Exit]({{ '/assets/img/posts/social-2.png' | relative_url }})
 
 ---
 
@@ -66,3 +70,5 @@ You can do the same when targeting someone. Start by grabbing everything visible
 - Don't leak too much about yourself online, because the wolves are always ready to hunt
 
 Plot twist: be a dog inside a sheep costume to take down the wolf if he tries to take advantage of you.
+
+![don't use the internet to stay safe — until next time]({{ '/assets/img/posts/social-3.png' | relative_url }})

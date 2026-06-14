@@ -15,6 +15,8 @@ The thread: DEP, ret2libc, ASLR, ROP, stack canaries, format strings, shadow sta
 
 Understanding why each defense failed is the only way to understand why shadow stack is different.
 
+![intro]({{ '/assets/img/posts/shadow-stack-1.png' | relative_url }})
+
 ---
 
 ## chapter 1: the history
@@ -100,6 +102,8 @@ Load `"/bin/sh"` into `rdi`, `NULL` into `rsi`, call `system()`. No injected she
 
 This is where the arms race stalled for years.
 
+![exploit chain: programmer code leads to memory leak, RCE, and the company goes bankrupt]({{ '/assets/img/posts/shadow-stack-2.png' | relative_url }})
+
 ---
 
 ## chapter 2: shadow stack
@@ -126,6 +130,8 @@ overflow →      [ret addr: 0xdeadbeef]  [ret addr: 0x401050]
                                                 ↑
                                         mismatch → #CP fault
 ```
+
+![shadow stack: main stack vs parallel shadow stack with return addresses and CALL/RET flow]({{ '/assets/img/posts/shadow-stack-3.png' | relative_url }})
 
 The shadow stack is mapped `SHADOW_STACK`. Normal store instructions cannot write to it. Only the `SAVEPREVRSP`/`RSTORSSP` instructions and the CPU call/ret microcode can touch it. A regular `mov [shadow_stack_ptr], rax` faults.
 

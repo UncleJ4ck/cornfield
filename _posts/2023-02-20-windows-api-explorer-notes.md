@@ -21,6 +21,8 @@ This is the floor. Kernel mode. User mode. How they communicate. What lives wher
 
 The x86/x64 architecture defines four privilege levels, "rings" numbered 0 through 3. Windows uses two of them:
 
+![CPU privilege rings — Ring 0 is kernel, Ring 3 is user applications]({{ '/assets/img/posts/winapi-2.png' | relative_url }})
+
 - **Ring 3 (User Mode):** where your applications run. Restricted access to hardware, memory, and CPU instructions. An attempt to execute a privileged instruction raises `#GP` (General Protection Fault).
 - **Ring 0 (Kernel Mode):** where the OS kernel, HAL, and device drivers run. Unrestricted. A bug here crashes the entire system.
 
@@ -50,6 +52,8 @@ When a user-mode application wants to do anything meaningful (allocate memory, c
 
 ## NT executive and the HAL
 
+![Windows NT architecture: User mode (POSIX/Win32/OS2 subsystems) over Kernel mode (System Services, HAL)]({{ '/assets/img/posts/winapi-1.png' | relative_url }})
+
 The **Hardware Abstraction Layer (HAL)** sits between the kernel and physical hardware. It abstracts platform-specific differences so the rest of the kernel can be hardware-agnostic.
 
 The **NT Executive** is the upper layer of `ntoskrnl.exe`:
@@ -65,6 +69,8 @@ The **NT Executive** is the upper layer of `ntoskrnl.exe`:
 | Configuration Manager | registry implementation |
 
 These are components within `ntoskrnl.exe`, not separate DLLs.
+
+![Detailed NT architecture: Executive Services, integral and environment subsystems, kernel-mode drivers, HAL, hardware]({{ '/assets/img/posts/winapi-3.png' | relative_url }})
 
 ---
 
@@ -118,6 +124,8 @@ Tools that implement SSN resolution dynamically: `SysWhispers3`, `Hell's Gate`, 
 
 ## the Win32 API hierarchy
 
+![General architecture: System Processes → Subsystem DLLs → NTDLL.DLL ↕ Kernel Mode (Executive, Drivers, HAL)]({{ '/assets/img/posts/winapi-4.png' | relative_url }})
+
 ```
 Win32 API (kernel32.dll, user32.dll, advapi32.dll)
            ↓
@@ -130,11 +138,15 @@ NT Executive (ntoskrnl.exe)
 
 `CreateProcess()` in `kernel32.dll` calls `NtCreateProcess()` in `ntdll.dll`, which executes a syscall into the kernel. The kernel validates arguments, checks security, creates the process object, and returns NTSTATUS.
 
+![DLL relationships: GDI32/USER32 and ADVAPI32 → KERNEL32 → KERNELBASE → NTDLL → syscall boundary]({{ '/assets/img/posts/winapi-5.png' | relative_url }})
+
 EDRs hook at the NTDLL layer (easiest, most stable). Direct syscalls bypass this. Kernel callbacks (`PsSetCreateProcessNotifyRoutine`, `ObRegisterCallbacks`) catch things that slip past NTDLL hooks.
 
 ---
 
 ## the PE format
+
+![PE format on-disk layout: DOS Header, DOS Stub, NT Headers, Section Table, .text/.data/.rdata/.rsrc sections]({{ '/assets/img/posts/winapi-6.png' | relative_url }})
 
 Every executable, DLL, and driver on Windows uses the **Portable Executable** format.
 
@@ -209,6 +221,8 @@ int main() {
 ---
 
 ## process memory layout
+
+![Win32 memory map: Stack (grows down), Heap (grows up), Program Image, DLLs, TEB, PEB, Kernel Land at 0x7FFF0000]({{ '/assets/img/posts/winapi-7.png' | relative_url }})
 
 A user-mode process on Windows x64 has a 128TB virtual address space:
 
