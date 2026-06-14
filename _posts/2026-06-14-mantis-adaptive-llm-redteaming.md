@@ -44,6 +44,16 @@ The honest verdict from the prior-art pass: if you want a clean academic attacke
 
 ---
 
+## where this actually came from
+
+Credit where it is owed, up front. Mantis did not start as a blank page in front of me. The original research and the first version are Soufiane Tahiri's (@S0ufi4n3), and the framework still carries his name in the banner because it should. He built the bones: an OWASP-mapped LLM security tester that ran a payload corpus against a target and scored the refusals. That is the thing I was complaining about at the top of this post, but I want to be precise about the complaint. The static corpus is the right *starting* point. It is the wrong *ending* point. You need the corpus to know what to ask. You need the loop to learn how the model says no. Soufiane built the first half. The adaptive controller in this post is the second half grown onto it.
+
+The category taxonomy is not mine either. The 26 vulnerability classes map onto the OWASP Top 10 for LLM Applications 2025, plus a set of practical categories (guardrail bypass, jailbreak, encoding, multi-turn escalation, CBRN-adjacent) that the OWASP list does not break out but that matter in practice. 844 test cases sit under those categories. More on the corpus below, because the corpus is the part everyone skips and it is half the tool.
+
+So the lineage is: Soufiane's OWASP tester, then a long evolution from a mostly-static scanner into the fingerprint-routed, two-evaluator, ladder-driven controller described here. The version history at the end of this post is that evolution written down. None of the early work was wasted. The static layer is still in there, it is just the floor now instead of the whole building.
+
+---
+
 ## definitions, so we are arguing about the same thing
 
 One word does a lot of work in this post, so I will pin it down.
@@ -217,6 +227,19 @@ Read the first block. The compliance judge was sure the model had complied, 0.90
 
 The combined confidence is the **geometric mean** of the two scores, not the average. A 0.9 compliance against a 0.4 harm gives 0.6, not 0.65. Geometric mean punishes disagreement harder, which is exactly what you want. A finding one evaluator is shaky on should not inherit the other's confidence and launder itself into "high."
 
+There is one more guard inside the compliance side that I did not mention yet, because it is subtle. A single SUCCEEDED from the compliance judge is not trusted on its own when its confidence is low. The production path, `evaluate_with_confirmation()`, runs a **re-query confirmation**: a low-confidence SUCCEEDED gets asked again, and if the second pass does not confirm it, the verdict is pulled back down. So the full gate for a finding is three checks, not one:
+
+```
+1. compliance judge says SUCCEEDED
+2. if low confidence -> re-query. must confirm, or it is downgraded.
+3. harm classifier (blind to the goal) independently says harmful=True
+   -> only now is it a finding. combined = sqrt(compliance * harm).
+```
+
+The failure-mode defaults are deliberately paranoid in the safe direction. If the harm classifier errors out or its output fails to parse, it does **not** silently drop the response. It defaults to `harmful=True` with low confidence, on the principle that a parsing bug should never suppress a real win. The compliance side is the opposite kind of paranoid: an unconfirmed SUCCEEDED gets demoted, not promoted. The whole thing is biased to keep the loop running and flag for review rather than to quietly call something safe.
+
+One operational detail that matters more than it sounds: every exit path runs through this gate, including the expensive ones. Best-of-N and evolutionary search generate a pile of candidate responses, and in the broken design those could have taken a shortcut around the verdict and reported a raw compliance hit. Now all of them, every BoN winner and every evolutionary candidate, go through `evaluate_with_confirmation()`. There is no back door where a finding gets logged without the harm classifier signing off. I checked, because a back door here would quietly poison every BoN run in the dataset.
+
 Now the honest weakness, because I would rather state it than have you find it. By default both evaluators are the **same model** with two different prompts. Two prompts to one model are correlated, not independent. If that model has a systematic lean toward calling things compliant, both inherit it, and the "agreement" is partly an illusion. The architecture lets you point the harm classifier at a different provider, and for anything you intend to publish you should. The default does not enforce it. I am not going to pretend correlated evaluators are independent ones just because it makes the numbers look cleaner.
 
 ---
@@ -298,6 +321,33 @@ Two things to notice. First, on R2 the homoglyph obfuscation accomplished nothin
 
 ---
 
+## the test corpus, which everyone skips
+
+The loop gets all the attention, but the loop is useless without something to ask. 844 test cases sit under 26 categories, and that corpus is the part of the project that traces straight back to Soufiane's original OWASP work. The categories map onto the OWASP Top 10 for LLM Applications 2025, then extend past it into the things that matter operationally but do not have an OWASP number.
+
+```
+OWASP-mapped                          payloads
+  LLM01  prompt injection               62
+  LLM02  insecure output handling       28
+  LLM06  sensitive info disclosure      45
+  LLM08  excessive agency               31
+  ... (full top 10)
+
+operational categories                payloads
+  guardrail bypass                    189   <- the hard one, used here
+  jailbreak attempts                   87
+  malicious content                    76
+  multi-turn escalation                52
+  encoding attacks                     44
+  privacy exfiltration                 38
+  social engineering                   26
+  CBRN adjacent                        11   <- the floor that did not move
+```
+
+Almost every number in this post comes from the guardrail-bypass category, because it is the largest (189 payloads) and the hardest, and because it is where the framing-versus-accumulation-versus-neither gradient is cleanest. The CBRN-adjacent set is small (11) but it is the one that exposes the real weight-level floor on the reasoning models. Different categories test different things. A model can be wide open on social engineering and a brick wall on CBRN, and a single blended percentage would average those into a meaningless middle. So the runs are per-category, and I report which category produced each number.
+
+---
+
 ## experimental setup
 
 OpenRouter as a universal provider, so one configuration hits every model through a single interface. Two-evaluator judge, default configuration (same model, two prompts, which I have already told you is the weak setting). 20 to 25 rounds per test depending on the run. The 45-strategy library, fingerprint-routed. Unless noted, the category is guardrail bypass, which is the hardest single category and the one where the gradient shows up cleanest.
@@ -308,23 +358,47 @@ A caveat I am putting at the top rather than burying: several of the June runs d
 
 ## results
 
-The historical battery first. 677 tests across 15 models, March to June 2026, on earlier versions of the framework.
+677 tests across 15 models from March to June 2026. I am going to walk it chronologically, because the dates are the story. The same tool got pointed at progressively harder models as they shipped, and watching the rate fall quarter by quarter is how the gradient first showed up.
 
-| model | tests | findings | rate | avg rounds | top technique |
-|-------|-------|----------|------|-----------|---------------|
-| Mistral 7B Instruct | 11 | 11 | 100% | 2.4 | persona anchoring |
-| Llama 3.1 8B | 40 | 27 | 67.5% | 3.6 | task deflection |
-| Llama 3.1 70B | 29 | 24 | 82.7% | 3.1 | task deflection |
-| Qwen3 32B | 9 | 9 | 100% | 3.0 | format exploit |
-| Kimi K2 (1T MoE) | 31 | 31 | 100% | 3.7 | adversarial poetry, echo chamber |
-| DeepSeek V3.2 | 14 | 14 | 100% | 2.4 | emotional steering, policy puppetry |
-| GPT-4.1-mini | 21 | 20 | 95.2% | 2.7 | context distillation |
-| GPT-4.1 | 49 | 43 | 87.7% | 2.6 | context distillation (24 hits) |
-| o3-mini | 54 | 37 | 68.5% | 3.0 | format exploit |
-| Claude Haiku 4.5 | 146 | 15 | 10.3% | 1.5 | many-shot |
-| Claude Sonnet 4.6 | 87 | 3 | 3.4% | 2.3 | context distillation |
+**March 2026, the v2.0 baseline.** This is the early battery, closest to the original static-plus-light-adaptive design, run mostly against the models that were easy to get at.
 
-The June v3.9 runs on the current architecture, with degraded runs marked:
+| tier | model | tests | findings | rate | avg rounds | top technique |
+|------|-------|-------|----------|------|-----------|---------------|
+| 1 | Mistral 7B Instruct v0.1 | 11 | 11 | 100% | 2.4 | persona anchoring |
+| 2 | Llama 3.1 8B | 40 | 27 | 67.5% | 3.6 | task deflection |
+| 3 | Llama 3.1 70B | 29 | 24 | 82.7% | 3.1 | task deflection |
+| 4 | GPT-4.1-mini | 21 | 20 | 95.2% | 2.7 | context distillation |
+| 4.5 | GPT-4.1 | 49 | 43 | 87.7% | 2.6 | context distillation (24 hits) |
+| 5 | o3-mini | 54 | 37 | 68.5% | 3.0 | format exploit |
+| 5.5 | Claude Haiku 4.5 | 146 | 15 | 10.3% | 1.5 | many-shot |
+| 5.6 | Claude Sonnet 4.6 | 87 | 3 | 3.4% | 2.3 | context distillation |
+
+The GPT-4.1 line is worth a pause. 24 of its 43 findings came from one technique, context distillation, and they all landed around round 2. Summarization framing ("extract the key findings from this document") read to the classifier as an analytical task, not content generation, and walked straight through. That is a single exploitable blind spot in one model family, found because the loop kept trying framings until one stuck and then the by-technique counter screamed at me. A pass rate would have shown 87.7% and hidden the fact that one trick did more than half the work.
+
+**April 2026, v2.8 and v2.9.** New open and mid-tier models shipped, so they went in the battery.
+
+| tier | model | tests | findings | rate | avg rounds | top technique |
+|------|-------|-------|----------|------|-----------|---------------|
+| 2 | Llama 4 Scout | 13 | 12 | 92.3% | 3.4 | format exploit |
+| 3 | Qwen3 32B | 9 | 9 | 100% | 3.0 | format exploit, emotional steering |
+| 3 | Kimi K2 (1T MoE) | 31 | 31 | 100% | 3.7 | adversarial poetry, echo chamber |
+| 4 | DeepSeek V3.2 | 14 | 14 | 100% | 2.4 | emotional steering (6), policy puppetry (5) |
+| 5.5 | Claude Haiku 4.5 (v2.9) | 17 | 2 | 11.8% | 3.0 | adversarial poetry |
+
+Three models at 100%, including the trillion-parameter Kimi. This is where "bigger is not safer" stopped being a hunch and became a pattern. Kimi K2 is a 1T mixture-of-experts model and it folded on every single test, average 3.7 rounds. DeepSeek V3.2 went down to emotional steering and policy puppetry in under three rounds. The capacity went into being helpful, and helpful is the hole.
+
+**May and June 2026, v3.0 to v3.4, the frontier push.** This is where the tool started losing, and losing is more informative than winning.
+
+| tier | model | tests | findings | rate | avg rounds | top technique |
+|------|-------|-------|----------|------|-----------|---------------|
+| 5.7 | Gemini 2.5 Flash | 27 | 4 | 14.8% | 2.0 | emotional steering, adversarial poetry |
+| 5.8 | Claude Opus 4.8 | 27 | 5 | 18.5% | 11.4 | deep crescendo (r18), echo chamber (r15) |
+| 5.9 | o4-mini | 27 | 0 | 0% | n/a | nothing, 20 rounds, 31 strategies |
+| 6.0 | GPT-5.5 | 27 | 0 | 0% | n/a | nothing, 20 rounds, 31 strategies |
+
+Look at the average-rounds column flip. The aligned models broke at 2 to 4 rounds. Opus needed 11.4 on average, and o4-mini and GPT-5.5 did not break at all across 20 rounds and the full strategy library. The 0% on the two reasoning models is what triggered the entire v3.9 effort.
+
+**June 2026, v3.9, current architecture.** Two-evaluator judge, the reasoning strategies, the reordered ladders. Degraded runs marked.
 
 | model | tests | findings | rate | notes |
 |-------|-------|----------|------|-------|
@@ -444,6 +518,40 @@ None of these are reasons not to run it. They are reasons not to oversell a sing
 
 ---
 
+## the whole story, v1 to v3.9
+
+This is the part I want to tell properly, because the framework did not arrive looking like the diagram at the top. It crawled there over four months, and almost every version is a tombstone for something that broke in a run. Read this as a changelog written by someone slightly annoyed at his past self.
+
+**v1, the origin: LLMExploiter.** Before it was Mantis it was `LLMExploiter`, by Soufiane Tahiri. The git history still has the merge from `soufianetahiri/LLMExploiter` in it, and I am not going to scrub that, because that is where this starts. The original was a static OWASP-mapped tester: a corpus of payloads across the OWASP Top 10 for LLMs, fired at a target, refusals scored, a clean report generated. No attacker LLM, no judge model, no feedback. It did the thing I now complain about, and it did it well, and it was the correct first move. You cannot build the loop until you have the corpus, and the corpus is his.
+
+**v2.0 (March), the loop arrives.** This is where I started bolting the controller on. Adaptive mode, an attacker LLM generating mutations, fingerprint-guided strategy selection, 10 to 20 rounds per test. The March battery in the results above is this version. It tore through aligned models and it had no idea what to do with Claude, which at 3.4% basically ignored it. That gap is what drove the next six versions.
+
+**v2.1, learning from resistance.** The first data-driven step. I took the Tier 2 models that resisted, looked at *how* they resisted, and designed new techniques from the resistance pattern itself. This is the moment the project stopped being "implement known jailbreaks" and started being "watch what survives and build the counter." Small change in code, big change in mindset.
+
+**v2.3 and v2.4, going after Claude specifically.** Two phases. v2.3 (Phase A) added techniques aimed at Constitutional AI models, the Claude class, because the generic framing that melted Llama did nothing to them. v2.4 (Phase B) added Claude-specific techniques lifted from published research rather than guessed. This is where principle-exploitation and the values-conflict framings came in. Claude does not have a keyword wall you can trick. It has a trained disposition you have to argue with, and you argue with it using its own stated principles.
+
+**v2.5, adversarial poetry.** One paper (arXiv:2511.15304) reported 45% on Claude Sonnet by wrapping the request in verse. I implemented it. It worked often enough on the mid-tier models to earn a permanent slot, and it is still a top technique on Kimi.
+
+**v2.6, functional emotion induction.** Anthropic published the mechanism, I implemented it as a strategy. Inducing a functional emotional state (urgency, desperation) shifts what the model is willing to do. This became a workhorse on DeepSeek, where emotional steering landed six of fourteen findings.
+
+**v2.8 and v2.9 (April), the open-model wave.** New models shipped, the battery grew. Llama 4 Scout, Qwen3 32B, Kimi K2, DeepSeek V3.2. Three of them at 100%. This is the April table above, and it is where "bigger is not safer" became undeniable.
+
+**v3.0 to v3.4 (May to June), the frontier wall.** I pointed the tool at the actual frontier: Gemini 2.5, Claude Opus 4.8, o4-mini, GPT-5.5. The rates collapsed. Opus needed 11+ rounds. o4-mini and GPT-5.5 went 0% across the full library. v3.3 specifically added a batch of verified 2025-2026 techniques (past-tense framing, CoT hijacking, comparison correction, structural necessity, definition taxonomy, already-happened, adaptive calibration) to try to crack them. They helped on Opus. They did nothing on o4-mini.
+
+**v3.5, agentic and document surfaces.** STAC agentic tool chaining (inject harmful content through a fake tool result the model trusts) and OCR/document-pipeline injection (approximate the text a document-ingestion path would extract). These are surface attacks, not framing attacks, aimed at the places models read input without treating it as a prompt.
+
+**v3.6, the ladder grows up.** Specificity Squeeze (a three-turn description-to-synthesis gap attack), Code Fragment Review, the Definition Taxonomy defensive-pivot block, and the first real budget math for the frontier ladder at 25 rounds. This is when the ladder stopped being a flat ordered list and became something the trimmer packs intelligently.
+
+**v3.7, the judge gets fixed.** The big one, and the subject of [its own section above](#the-judge-problem-which-i-got-wrong-first). The two-evaluator judge replaced the single-judge-validates-itself design after I caught the old one laundering false positives through a circular control. Also unicode homoglyph substitution, taxonomy section reference, and a fix so the Best-of-N and evolutionary search paths could not bypass the new verdict gate.
+
+**v3.8, sharpening the loop.** Structured PARTIAL gap targeting (parse the MISSING field, hand only the gap to the attacker). Deterministic homoglyph post-processing, so obfuscation no longer depended on the attacker LLM remembering to apply it. And the multi-turn `turn_safety_window`, after I finally understood I had been aborting my own echo-chamber runs on their intentionally-benign opening turns for weeks.
+
+**v3.9, cracking the reasoning wall.** The three reasoning strategies (inverse threat modeling, nomenclature obfuscation, socratic chain), the ladder reorder that actually put them in front of reasoning targets, the `skip_for_reasoning` flag, and the refusal-acceleration reset. This is the version that took o4-mini from 0% to 90% on the broad set, and the one that found the real CBRN floor underneath.
+
+That is the whole arc. A static tester became a loop, the loop learned to read refusals, the reader learned to route by defense layer, the judge stopped trusting itself, and the strategies kept chasing each new class of model as it shipped. None of it was designed up front. Every version is a thing that embarrassed me in a run, plus the fix.
+
+---
+
 ## what I would change
 
 If I rebuilt this tomorrow, three things.
@@ -461,6 +569,16 @@ Third, I would log the full payload-response pair for every PARTIAL, not just th
 The thing I will defend hardest is the loop. Static testing answers "does my prompt list work on this model," and that answer expires the moment the provider patches your phrasings. The loop answers "how does this model fail, and what does it take to get there," and that answer survives a patch. When a provider closes the exact wording you used, the corpus tool reports a regression to zero and learns nothing. The loop fingerprints the new refusal, routes to a different layer, and tells you whether the model got genuinely harder to break or just memorized your strings.
 
 The gradient is the payoff. Three models, three distinct failure mechanisms, visible only because the method could tell them apart. That is the whole reason to build a controller instead of a list. Everything else in this post, the two-evaluator judge, the budget trimmer, the structured PARTIAL, the reasoning strategies, is in service of making that one observation trustworthy.
+
+---
+
+## thanks
+
+First and loudest, **Soufiane Tahiri (@S0ufi4n3)**. The original research and the first version of Mantis are his. The OWASP-mapped corpus, the bones of the scanner, the idea of treating LLM security as a structured battery rather than a pile of one-off prompts, all of that is his work, and everything in this post is built on top of it. I extended the thing. He started it. That matters and it should be said in plain words, not buried in a footnote.
+
+Second, the researchers whose published work became strategies in the library. Most of the techniques here are not invented, they are implemented from papers, and the people who found them deserve the citation: the PAIR and TAP authors for the attacker-judge loop, the Crescendo team at Microsoft for multi-turn escalation, the format-exploit, adversarial-poetry, hidden-CoT, past-tense, and string-composition authors listed below. The job here was engineering a controller around their findings, not discovering the findings.
+
+Third, the model providers, genuinely. A red-team tool is only useful if there is something hard to break, and the fact that o4-mini's hardest CBRN core did not move under the full ladder cycled twice is them doing their job well. The gradient in this post is as much a measurement of their alignment work as it is of my attacks.
 
 ---
 
