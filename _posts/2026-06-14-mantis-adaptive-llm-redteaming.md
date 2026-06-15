@@ -72,29 +72,34 @@ A **strategy** is a macro-level directive from the engine ("restructure this as 
 Three models in a loop, with two pieces of glue between them.
 
 ```
-   ┌──────────────────────────────────────────────────────────────┐
-   │                                                                │
-   │   ┌─────────────┐      payload      ┌──────────────┐          │
-   │   │ attacker LLM │ ────────────────► │  target LLM  │          │
-   │   │             │                    │  (under test)│          │
-   │   └─────────────┘                    └──────┬───────┘          │
-   │         ▲                                   │ response          │
-   │         │                                   ▼                   │
-   │         │                    ┌──────────────────────────────┐  │
-   │         │                    │  compliance judge   (sees     │  │
-   │         │                    │  payload + response)          │  │
-   │         │                    │  harm classifier    (sees     │  │
-   │         │                    │  response ONLY)               │  │
-   │         │                    └──────────────┬───────────────┘  │
-   │         │                                   │ verdict           │
-   │         │            ┌──────────────────────▼───────────────┐  │
-   │         │            │  fingerprint(refusal) -> layer        │  │
-   │         └────────────┤  strategy engine -> next ladder rung  │  │
-   │      directive       │  payload mutator -> encoders/transforms│  │
-   │                      └───────────────────────────────────────┘  │
-   │                                                                │
-   └────────────────────────────────────────────── loop until ─────┘
-                                       SUCCEEDED or round budget spent
+        ┌──────────────┐
+        │ attacker LLM │   mutates the payload under
+        └──────────────┘   the selected strategy
+                │ payload
+                ▼
+        ┌─────────────────────────┐
+        │ target LLM (under test) │   the system under test
+        └─────────────────────────┘
+                     │ response
+                     ▼
+        ┌────────────────────────────────────────────┐
+        │ compliance judge : sees payload + response │
+        │ harm classifier  : sees response only      │
+        └────────────────────────────────────────────┘
+                               │ verdict
+                               ▼
+           SUCCEEDED  ->  save the finding, stop the loop
+           PARTIAL    ->  carry the named gap, loop again
+           FAILED     ->  advance the ladder, loop again
+                               │
+                               ▼   (on PARTIAL or FAILED)
+        ┌───────────────────────────────────────────────┐
+        │ fingerprint(refusal) -> defense layer         │
+        │ strategy engine     -> next ladder rung       │
+        │ payload mutator      -> encoders / transforms │
+        └───────────────────────────────────────────────┘
+                                │
+        ◄───────────────────────┘   back to the attacker LLM (loop)
 ```
 
 Per round, in order:
@@ -141,7 +146,32 @@ UNKNOWN              a refusal with no clean signature. fall back to the
 
 The class picks the counter. Input classifier is dumb, so you reach for homoglyphs, formal scientific notation, an opaque section reference the keyword matcher cannot parse. Alignment is the model itself, so obfuscation is useless and you need framing that changes the meaning. Exchange classifier is watching for escalation, so you keep early turns genuinely benign and accumulate slowly.
 
+The classification is a set of cheap heuristics, not a model call, because spending a judge call to diagnose every refusal would double the cost for nothing. A sub-five-second refusal with a canned phrase and zero generated content reads as INPUT_CLASSIFIER or a hard ALIGNMENT reflex. A response that streamed real content and then got truncated or scrubbed points at OUTPUT_CLASSIFIER. A refusal that only shows up once the conversation has built up, with the earlier turns answered cleanly, is EXCHANGE_CLASSIFIER. Partial operational content with a hard stop is PARTIAL_COMPLIANCE. When nothing matches, it is UNKNOWN and the loop falls back to general reframing.
+
 Here is something I did not expect from the data. Across the full set of runs, the fingerprinter logged roughly **3,800 ALIGNMENT classifications against about 700 EXCHANGE_CLASSIFIER** ones, and almost nothing else with a clean signature. On the frontier and reasoning models, the wall is overwhelmingly the base model's own training, not an external input or output filter. That is itself a result. The expensive separate-classifier defenses you read about are either not deployed on the endpoints I tested or are invisible from the outside, and the thing actually saying no is the model. Which means obfuscation tricks are mostly a waste of rounds on frontier targets, and the budget should go to framing. The ladders reflect that.
+
+Here is the routing in one picture. The layer on the left is the diagnosis, the strategies under it are the prescription.
+
+```
+  refusal observed
+        │
+        ▼   fingerprint by: timing, keywords, partial output,
+            stream-kill point, conversation-level flags
+        │
+  ┌─────┴──────────────────────────────────────────────────┐
+  │                                                          │
+  ▼                  ▼                ▼               ▼       ▼
+INPUT_CLASS     ALIGNMENT      OUTPUT_CLASS   EXCHANGE_CLASS  UNKNOWN
+  │                  │              │              │           │
+homoglyph,       definition     artifact       echo chamber,  comparison
+nomenclature,    taxonomy,      reframe,       deep crescendo,correction,
+section ref,     structural     context        relational     structural
+cross-lingual    necessity,     distillation,  goal sub,      necessity,
+                 already-       prefill,       slow down +    definition
+                 happened,      many-shot      stay benign    taxonomy
+                 inverse
+                 threat model
+```
 
 One subtle signal took me a while to trust. When a model that had been taking 20 seconds per round suddenly answered in 2, that acceleration was itself a fingerprint. The exchange classifier had locked onto the conversation and was rejecting on sight without doing real work. So Mantis watches `round_ms`, and when it collapses like that after a slow round, it resets the strategy history once and breaks out of the loop instead of burning the rest of the budget on strategies the classifier now rejects instantly. Small thing. Saved a lot of dead rounds.
 
@@ -177,6 +207,22 @@ budget = 20 rounds, frontier ladder
    [homoglyph 1][taxonomy 2][def-tax 1][struct 1][already 1]
    [concession 1][adaptive-calib 3][past-tense 1] ... = 15
    anything that does not fit is dropped, logged, not silently truncated
+```
+
+The trimmer in pseudocode, because the reservation is the non-obvious part:
+
+```
+trim(ladder, budget):
+    tail      = highest_value_multiturn_that_fits(ladder, budget)
+    remaining = budget - cost(tail)
+    packed    = []
+    for strategy in ladder.single_shot_first():
+        if cost(strategy) <= remaining:
+            packed.append(strategy)
+            remaining -= cost(strategy)
+        else:
+            log_dropped(strategy)        # never silent
+    return packed + [tail]
 ```
 
 That last line matters and I will say it plainly because it is a common sin in this kind of tool: when the trimmer drops a strategy for budget, it logs that it dropped it. A tool that silently truncates its own coverage and then reports a pass rate is lying by omission. If a model "passed," you need to know whether it passed the whole ladder or just the part that fit.
@@ -259,6 +305,34 @@ The loop parses out the MISSING field and hands that, and only that, to the atta
 
 ---
 
+## anatomy of one round
+
+Zoom in on a single round, because the three-way verdict branch is the engine. Every round ends in exactly one of three states, and the state decides what the next round even is.
+
+```
+                      ┌───────────────┐
+        payload ─────►│  one round     │
+                      └───────┬───────┘
+                              │ two-evaluator verdict
+             ┌────────────────┼────────────────┐
+             ▼                ▼                ▼
+        ┌─────────┐     ┌──────────┐     ┌─────────┐
+        │SUCCEEDED│     │ PARTIAL  │     │ FAILED  │
+        └────┬────┘     └────┬─────┘     └────┬────┘
+             │               │                │
+        save &          carry gap        advance ladder
+        STOP            keep looping      keep looping
+                             │                │
+                             └──────┬─────────┘
+                                    ▼
+                          fingerprint + reselect
+                          (or acceleration reset)
+```
+
+SUCCEEDED is the only terminal state. PARTIAL and FAILED both loop, but they loop differently. FAILED throws the strategy away and climbs the ladder. PARTIAL keeps the same goal and narrows it, carrying the structured gap forward so the next attempt is a sniper shot, not another spray. The acceleration reset I described earlier sits on this same junction: if the looping rounds start coming back in under five seconds after a slow one, the exchange classifier has locked on, and the loop wipes its strategy history once to break the pattern instead of grinding the rest of the budget into a wall that now rejects everything on sight.
+
+---
+
 ## the strategy library
 
 45 strategies. I am not listing all of them, that is what the repo is for. The families:
@@ -269,6 +343,27 @@ The loop parses out the MISSING field and hands that, and only that, to the atta
 - **structural**: exploit a specific surface. Format-constraint exploitation, code-fragment review mode, agentic tool-output injection.
 
 Under the strategies sit the mechanical tools: 18 encoders (base64, ROT13, morse, braille, NATO, zero-width, unicode tags, and the homoglyph maps) and 22 invertible string transforms drawn from the string-composition jailbreak work, which reported 91.2% on Claude 3 Opus via random two-to-four transform compositions. The attacker can compose these deterministically, so a strategy that says "obfuscate this" does not depend on the attacker LLM remembering to actually do it. The post-processor applies it after generation, before the target sees the payload.
+
+---
+
+And here is how a single payload actually gets built, from corpus entry to the bytes the target sees. The deterministic post-process is the v3.8 fix: obfuscation no longer depends on the attacker LLM remembering to apply it.
+
+```
+  base payload (from the 844-case corpus)
+        │
+        ▼
+  strategy directive   e.g. "restructure as a definitional taxonomy"
+        │
+        ▼
+  attacker LLM rewrite   applies 1+ of 47 techniques
+        │               (fiction wrap, prefill, persona, ...)
+        ▼
+  deterministic post-process   (only if strategy/layer calls for it)
+        │   18 encoders  : base64, rot13, morse, zero-width, unicode tags
+        │   22 transforms: homoglyph, reversal, caesar, leet, ... composed 2-4x
+        ▼
+  final payload  ──►  target LLM
+```
 
 ---
 
@@ -289,6 +384,24 @@ I will tell you below how much these actually moved, because "I wrote new attack
 Multi-turn strategies have a failure mode that cost me a stack of dead runs before I understood it. A five-turn echo chamber opens with turns that are *supposed* to be benign. They plant context. But the early benign turns sometimes drew a hard, high-confidence refusal anyway, and that refusal aborted the whole sequence before it ever reached the turn that mattered. I was killing my own attacks on purpose, by design, and not seeing it.
 
 The fix is a `turn_safety_window` on every multi-turn strategy. Hard refusals inside the window are logged but do not abort the run. Echo chamber gets three of five turns of grace. The socratic chain gets four of six. Early refusal of a benign turn is noise, not signal, so the loop is allowed to absorb it and keep going.
+
+```
+  echo chamber, 5 turns, turn_safety_window = 3
+
+  turn 1   turn 2   turn 3 │ turn 4   turn 5
+  seed     format   diverse│ converge  extract
+  context  steering  paths │ on goal   payload
+  ───────  ───────  ───────│ ───────   ───────
+  refuse?  refuse?  refuse?│ refuse?   refuse?
+   logged   logged   logged│  ABORT     ABORT
+   not      not      not   │  the run   the run
+   fatal    fatal    fatal │
+                           │
+   <──── safety window ────>  <─ refusals now count ─>
+        (benign by design)
+```
+
+The window is the difference between a strategy that gets to turn 4 and one that dies on turn 1 for doing exactly what it was designed to do.
 
 The mirror-image flag is `skip_for_reasoning`. The consistency-bias strategies, crescendo and its relatives, depend on the model feeling committed to what it already said. A per-turn reasoning model has no such commitment, so running those strategies against it is pure budget waste. They are dropped from the reasoning ladder entirely. Knowing when *not* to run an attack is half the budget.
 
@@ -354,6 +467,23 @@ Almost every number in this post comes from the guardrail-bypass category, becau
 OpenRouter as a universal provider, so one configuration hits every model through a single interface. Two-evaluator judge, default configuration (same model, two prompts, which I have already told you is the weak setting). 20 to 25 rounds per test depending on the run. The 45-strategy library, fingerprint-routed. Unless noted, the category is guardrail bypass, which is the hardest single category and the one where the gradient shows up cleanest.
 
 A caveat I am putting at the top rather than burying: several of the June runs degraded when API credits ran out mid-batch. The target started returning payment errors, which the framework correctly logs as transport failures rather than refusals, but it means those runs did not complete every test. I mark those rates as floors. A "0%" from a run where most calls returned a billing error is not a zero, it is a non-result, and I throw those out rather than dress them up. The GPT-5.5 v3.9 run is exactly this case and I do not report a v3.9 number for it.
+
+---
+
+## what a round actually costs
+
+People assume the two-judge design doubles your bill. It does not, and the timing data says why. Across 2,669 measured rounds:
+
+```
+              median    p90       max
+target call    15.0 s    33.3 s    300 s   (the 5-minute wall)
+judge call      1.7 s     3.1 s     60 s
+full round     32.9 s    81.0 s    312 s
+```
+
+The target call dominates. The judge is cheap, roughly a tenth of the target's latency, so running two evaluators instead of one adds a couple of seconds to a thirty-second round. Noise. The expensive thing is the model you are attacking, and the reasoning models own that 300-second tail: they think for five full minutes and then refuse. That is its own result. A model willing to burn five minutes of compute to decide *not* to help you is a model taking the question seriously.
+
+So budget by target calls, not by judge calls. A 25-round run against a frontier reasoning model is 25 target calls at maybe half a minute each, with cheap judging layered on top. Best-of-N multiplies the target calls by N, and that is where the bill actually grows, not in the second evaluator.
 
 ---
 
