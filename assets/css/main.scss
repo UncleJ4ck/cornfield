@@ -96,7 +96,7 @@ body::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(70% 60% at 50% 42%, rgba(8, 9, 5, 0.5), transparent 78%);
+  background: radial-gradient(70% 60% at 50% 42%, rgba(8, 9, 5, 0.28), transparent 78%);
 }
 
 .atmos-fog {
@@ -129,14 +129,14 @@ body::after {
   50%      { transform: translate3d(-6%, -2%, 0); }
 }
 @keyframes scene-breathe {
-  0%, 100% { opacity: 0.18; }
-  50%      { opacity: 0.27; }
+  0%, 100% { opacity: 0.82; }
+  50%      { opacity: 0.92; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .atmos-scene,
   .atmos-fog { animation: none; }
-  .atmos-scene { opacity: 0.22; }
+  .atmos-scene { opacity: 0.85; }
 }
 
 a {
