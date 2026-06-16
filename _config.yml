@@ -9,8 +9,8 @@ author:
   medium: "jack_crane"
   location: "the farm"
 
-baseurl: "/farm"
-url: "https://unclej4ck.github.io"
+baseurl: ""
+url: "https://cornfield.sh"
 
 # Build
 plugins:
