@@ -1,0 +1,43 @@
+title: 'Atomic Arch: monero-wallet-gui binary replaced outside the package manager'
+id: 6f1a0a2e-1c44-4b9a-9b6e-atomicarch01
+status: experimental
+logsource: { product: linux, category: file_event }
+detection:
+  selection:
+    TargetFilename: '/usr/bin/monero-wallet-gui'
+  legit:
+    Image|endswith: ['/pacman', '/makepkg', '/pamac']
+  condition: selection and not legit
+level: high
+---
+title: 'Atomic Arch: stealer execution + systemd persistence from /var/lib'
+id: 6f1a0a2e-1c44-4b9a-9b6e-atomicarch02
+status: experimental
+logsource: { product: linux, category: process_creation }
+detection:
+  drop_exec:
+    Image|re: '^/var/lib/[a-z0-9]{4,8}/[a-z0-9]{4,8}$'   # e.g. /var/lib/moge/moge
+  condition: drop_exec
+level: high
+---
+title: 'Atomic Arch: eBPF rootkit pin maps'
+id: 6f1a0a2e-1c44-4b9a-9b6e-atomicarch03
+status: experimental
+logsource: { product: linux, category: file_event }
+detection:
+  selection:
+    TargetFilename|startswith: '/sys/fs/bpf/'
+    TargetFilename|endswith: ['/hidden_pids', '/hidden_names', '/hidden_inodes']
+  condition: selection
+level: critical
+---
+title: 'Atomic Arch: Vault token theft to local Vault API enumeration'
+id: 6f1a0a2e-1c44-4b9a-9b6e-atomicarch04
+status: experimental
+logsource: { product: linux, category: network_connection }
+detection:
+  vault_api:
+    DestinationIp: '127.0.0.1'
+    DestinationPort: 8200
+  condition: vault_api   # correlate with a read of ~/.vault-token by the same non-vault PID
+level: medium

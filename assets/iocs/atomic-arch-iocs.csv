@@ -1,0 +1,64 @@
+category,type,value,context,classification
+file,sha256,6144d433f8a0316869877b5f834c801251bbb936e5f1577c5680878c7443c98b,deps stage-1 stealer (MalwareBazaar doNotDetonate),indicator
+file,sha256,7883bda1ff15425f2dbe622c45a3ae105ddfa6175009bbf0b0cad9bf5c79b316,js-digest stage-1 stealer (wave 2),indicator
+file,sha256,3607de2597f8955f9a88f36ee43b64d3891b8ef536e99fa098e80169350f7b01,embedded eBPF rootkit object (identical in both stealers),indicator
+file,sha256,47893d9badc38c54b71321263ce8178c1abb10396e0aadf9793e61ec8829e204,"trojaned monero-wallet-gui v1, 27787328 B",indicator
+file,sha256,6e4b611243aa2d261b17a61cd0aa9f3d51b30b8b66a64ead4c0696ae7025aea1,"truncated download of v1, 15933790 B",indicator
+file,sha256,92c40b92e909cd3dd505ea067f77218df00143e9a133a4463a26b217832ad8c0,"truncated download of v1, 20516912 B",indicator
+file,sha256,ce8ecab937cf7109f3b344782cd1cbad680d4477965b235b0a59ce888986c4eb,trojaned main.qml (decompressed),indicator
+file,sha256,488699593ea4bfe487d3464924be136af69cd1403494d0373bdba2fd1eac2d3b,drain block (663 B),indicator
+file,sha256,5007f0bb9b579176a66430d935192762490df9e87151ceaaa9201491520c4086,stock main.qml (clean reference),clean-reference
+file,sha256,ac745b4f5828f9322faccf55359e479f34d3dbbe1153debe64e93bc664abb281,"stock monero-wallet-gui 0.18.5.0, 17552112 B (clean negative control)",clean-reference
+fingerprint,buildid,41980d03dc3c4809591db0ff17003a82bc067d97,deps,indicator
+fingerprint,buildid,a687aed5d0517aacb74e30737ed33ec470364a30,js-digest,indicator
+fingerprint,buildid,a92f892ea1d50a0240653d4e67c66ae0005c11c0,wallet v1,indicator
+fingerprint,buildid,35731917e94b5a38bee2eb61bcaa089c28308eb5,stock wallet (clean),clean-reference
+fingerprint,git-describe,a008085d9,trojaned wallet build commit (reports 0.18.5.0),indicator
+fingerprint,toolchain,"rustc 1.98.0-nightly (e7815e522 2026-06-04); LLVM 22.1.6",both stage-1 stealers,context
+fingerprint,telfhash,t16c31de44ac388bfad4a24901ac2515d7c153c67c3410c714ff60dee65eee489f62ae4f,deps cluster pivot,indicator
+fingerprint,tlsh,T1FDE56F47F5E148B9C4E9CCB0871FE233EA3574899122B12B6BD89B413B26F209F5D791,deps fuzzy hash,indicator
+network,onion,olrh4mibs62l6kkuvvjyc5lrercqg5tz543r4lsw3o6mh5qb7g7sneid.onion,Tor C2,indicator
+network,uri-path,GET /api/mt/,tasking (machine-id-derived Bearer),indicator
+network,uri-path,POST /upload,loot exfil,indicator
+network,uri-path,/bin/linux,second-stage payload download,indicator
+network,uri-path,/bin/sha256/linux,second-stage expected hash,indicator
+network,host,temp.sh,wave-1 multipart exfil,indicator
+network,domain,dcdeploy.jeongyein520.indevs.in,CF tunnel front -> localhost:8001,indicator
+network,cf-account-tag,0e1a184426855d762a55cf7287582644,Cloudflare takedown anchor,indicator
+network,cf-tunnel-uuid,5fed78e8-d0bb-4b59-be34-e48729ea9a98,Cloudflare takedown anchor,indicator
+network,cf-tunnel-token,184-char base64url; reusable secret WITHHELD and reported to Cloudflare,ARGO_AUTH connector credential (access credential not indicator),access-credential-withheld
+network,xray-uuid,ff42ddc5-a217-4254-8c23-5a83050703af,fleet-wide proxy password,indicator
+network,cfip-front,saas.sin.fan,Cloudflare domain-front default,indicator
+network,dist-host,amd64.ssss.nyc.mn/web,"xray-core (sha256 7cee3cf29afe22209001d890e4cea28e93c3836d47c2835209317d6ca6871420)",indicator
+network,dist-host,amd64.ssss.nyc.mn/bot,cloudflared (run with --token $ARGO_AUTH),indicator
+network,container,ghcr.io/fardewoak/herbsobering430,proxy-node recruiter,indicator
+host,dropped-exe,"/var/lib/<rand8>/<rand8> (e.g. /var/lib/moge/moge), mode 0700",persistence drop,indicator-pattern
+host,persistence,"/etc/systemd/system/<rand8>.service and ~/.config/systemd/user/<rand8>.service (Restart=always RestartSec=30)",systemd persistence,indicator-pattern
+host,bpf-pins,"/sys/fs/bpf/<rand8>/{hidden_pids,hidden_names,hidden_inodes}",eBPF rootkit pins,indicator-pattern
+host,replaced-binary,/usr/bin/monero-wallet-gui,overwritten by the trojan,indicator
+host,ebpf-build-path,/cloud/scales/agent/../ebpf/scales.bpf.c,string in the stealer,indicator
+crypto,xmr-subaddress,865BH8r1M2Ni6nckpNr357dqDYCC4VkoyeX7EReDmAkYWDnS646BgXeLmH8zcPr7ENbC9ZjzEXyD6ZDkYbfMjefx4aBZF8C,"drain destination (net 42, checksum a95b1d99)",indicator
+attribution,bip39-mnemonic,bench crane defense corn wheel trial news abuse finish better paddle slush,operator identity seed,indicator
+attribution,eth-address,0x7e28D9889f414B06c19a22A9Bd316f0AC279a4d6,derived anchor (virgin; also IronWorm's artifact),indicator
+attribution,persona,fardewoak (GitHub id 187815981; fardewoak@outlook.com),LOW confidence as a human,context
+package,npm,atomic-lockfile@1.4.2,malicious package,indicator
+package,npm,lockfile-js@1.4.2,malicious package,indicator
+package,npm,js-digest@4.2.2,malicious package,indicator
+package,npm,nextfile-js@1.4.2,malicious package,indicator
+account,npm-publisher,brixtai,sockpuppet,indicator
+account,npm-publisher,slsnvskse,sockpuppet,indicator
+account,npm-publisher,uquque,sockpuppet,indicator
+account,npm-publisher,herbsobering,umbrella account,indicator
+account,aur-adopter,krisztinavarga,sockpuppet adopter,indicator
+account,aur-adopter,franziskaweber,sockpuppet adopter,indicator
+account,aur-adopter,tobiaswesterburg,sockpuppet adopter,indicator
+account,aur-adopter,ellenmyklebust,sockpuppet adopter,indicator
+account,aur-adopter,custodiatovar,sockpuppet adopter,indicator
+account,aur-adopter,veramagalhaes,sockpuppet adopter,indicator
+account,forged-commit-author,PLYSHKA,forged commit identity,indicator
+not-ioc,name,arojas,impersonated KDE maintainer (victim of the forgery),not-ioc
+not-ioc,name,hanxi2014,upstream author on inherited commits (innocent),not-ioc
+not-ioc,name,jhruby,upstream author on inherited commits (innocent),not-ioc
+not-ioc,name,appro,upstream author on inherited commits (innocent),not-ioc
+not-ioc,name,eooce,upstream author of the forked proxy tool (innocent),not-ioc
+not-ioc,name,pingwin840,post-disclosure copycat scareware account (not the operator),not-ioc

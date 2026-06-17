@@ -1,5 +1,5 @@
-title: "thefarm"
-description: "notes from the farm. building and breaking stuff."
+title: "cornfield"
+description: "notes from the cornfield. building and breaking stuff."
 
 author:
   name: "UncleJ4ck"
@@ -7,7 +7,7 @@ author:
   github: "UNcleJ4ck"
   twitter: "UncleJa4ck"
   medium: "jack_crane"
-  location: "the farm"
+  location: "the cornfield"
 
 baseurl: ""
 url: "https://cornfield.sh"
