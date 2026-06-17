@@ -33,14 +33,14 @@ $border-mid:  #2e3020;
 }
 
 html {
-  font-size: 16px;
+  font-size: 18px;
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
   font-family: $font;
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.7;
   color: $text;
   background-color: $bg;
@@ -177,7 +177,7 @@ a {
 }
 
 .nav-inner {
-  max-width: 800px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 0 1.5rem;
   height: 2.875rem;
@@ -271,7 +271,7 @@ a {
 
 .site-main {
   flex: 1;
-  max-width: 800px;
+  max-width: 1080px;
   width: 100%;
   margin: 0 auto;
   padding: 3rem 1.5rem 5rem;
@@ -283,7 +283,7 @@ a {
 }
 
 .footer-inner {
-  max-width: 800px;
+  max-width: 1080px;
   margin: 0 auto;
   display: flex;
   justify-content: space-between;
@@ -545,7 +545,7 @@ a.sh-label {
   }
 
   h2 {
-    font-size: 1.0rem;
+    font-size: 1.125rem;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid $border;
 
@@ -553,16 +553,19 @@ a.sh-label {
   }
 
   h3 {
-    font-size: 0.925rem;
+    font-size: 1.0rem;
     font-weight: 600;
 
     &::before { content: '### '; color: $text-muted; font-weight: 400; }
   }
 
   h4 {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: $text-sec;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: $acc-dim;
+    margin-top: 1.75rem;
   }
 
   p {
@@ -584,14 +587,92 @@ a.sh-label {
     &:hover { text-decoration-color: $acc; }
   }
 
+  // inline code — quiet by default so dense hashes/paths/IOCs read as code,
+  // not as a page full of equal-weight highlights. no border, soft fill.
   code {
     font-family: $font;
     font-size: 0.83em;
-    color: $acc;
-    background: $bg-card;
-    padding: 0.15em 0.4em;
+    color: $text;
+    background: rgba($acc, 0.06);
+    padding: 0.1em 0.35em;
     border-radius: 3px;
-    border: 1px solid $border-mid;
+    border: none;
+    word-break: break-word;
+  }
+
+  // ── callouts / admonitions ──────────────────────────────────────────
+  // author applies with kramdown block-IAL: a paragraph or blockquote
+  // followed by {:.callout-key}, or a raw <div class="callout-key">…</div>
+  .callout-key,
+  .callout-warn {
+    background: $bg-card;
+    border: 1px solid $border;
+    border-left: 3px solid $acc;
+    border-radius: 0 4px 4px 0;
+    padding: 0.875rem 1.125rem;
+    margin: 1.75rem 0;
+    color: $text-sec;
+    font-size: 0.83rem;
+    line-height: 1.7;
+
+    // a small uppercase tag above the body, set via the data-label attr or
+    // the ::before default; keeps the box self-explaining
+    &::before {
+      display: block;
+      font-size: 0.58rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+
+    // tidy spacing when the author wraps content in <p>/<ul> inside a div
+    p, ul, ol { margin: 0; color: inherit; }
+    p + p { margin-top: 0.6rem; }
+    a { color: $acc; }
+  }
+
+  .callout-key {
+    border-left-color: $acc;
+    &::before { content: 'Key finding'; color: $acc; }
+  }
+
+  .callout-warn {
+    border-left-color: $straw;
+    background: rgba($straw, 0.04);
+    &::before { content: 'Correction'; color: $straw; }
+  }
+
+  // ── inline severity / confidence badges ─────────────────────────────
+  // <span class="badge-high">HIGH</span> inline in a sentence
+  .badge-high,
+  .badge-mod,
+  .badge-low {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1;
+    padding: 0.25em 0.5em;
+    border-radius: 3px;
+    border: 1px solid currentColor;
+    vertical-align: 0.06em;
+    white-space: nowrap;
+  }
+
+  .badge-high { color: #c97a6d; background: rgba(201, 122, 109, 0.08); }
+  .badge-mod  { color: $straw;  background: rgba($straw, 0.08); }
+  .badge-low  { color: $text-muted; background: rgba($text-muted, 0.14); }
+
+  // ── subtle key-term highlight ───────────────────────────────────────
+  // <span class="highlight-term">…</span> or text{:.highlight-term}
+  .highlight-term {
+    color: $acc-light;
+    background: rgba($acc, 0.1);
+    padding: 0.05em 0.25em;
+    border-radius: 2px;
+    font-weight: 600;
   }
 
   pre {
@@ -603,7 +684,7 @@ a.sh-label {
     overflow-x: auto;
     margin: 1.75rem 0;
     font-size: 0.8rem;
-    line-height: 1.75;
+    line-height: 1.4;
     position: relative;
 
     code {
@@ -632,7 +713,7 @@ a.sh-label {
 
       code {
         font-size: 0.8rem;
-        line-height: 1.75;
+        line-height: 1.4;
         color: $text;
       }
     }
@@ -831,7 +912,7 @@ a.sh-label {
 
 // Rouge syntax tokens — warm palette matching the crimson theme
 .highlight {
-  .c,  .c1, .cm, .cs { color: $text-muted; font-style: italic; }
+  .c,  .c1, .cm, .cs { color: #9aa07e; font-style: italic; }
   .k,  .kd, .kn, .kp, .kr, .kt { color: #c9d156; font-weight: 600; }
   .s,  .s1, .s2, .sb, .sc, .sd, .si, .sx { color: #98c4aa; }
   .n,  .nn { color: $text; }
@@ -846,6 +927,32 @@ a.sh-label {
   .gd { color: #c94c4c; }
   .gi { color: #98c4aa; }
   .gh { color: $acc; font-weight: 700; }
+  // shell-session tokens (Rouge `console` lexer, future-proof)
+  .gp { color: $acc; font-weight: 600; }
+  .go { color: $text-sec; }
+  .gu { color: $acc-dim; }
+}
+
+// Terminal-block enhancement: main.js tags untagged shell blocks so the command
+// line pops, hashes/offsets tint, and inline annotations recede. Rouge-coloured
+// blocks (language-tagged) are left to the token theme above and never touched.
+.prose .highlight .tk-cmd { color: $acc; font-weight: 600; }
+.prose .highlight .tk-hex { color: #c49060; }
+.prose .highlight .tk-ann { color: #9aa07e; font-style: italic; }   // readable muted (was #514f43, near-invisible)
+.prose .highlight .tk-str { color: #98c4aa; }
+
+// Mermaid diagrams: center, scroll horizontally when wider than the column.
+.prose .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.75rem 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.prose .mermaid svg {
+  height: auto;
+  max-width: 100%;
+  display: block;
 }
 
 @media (max-width: 640px) {

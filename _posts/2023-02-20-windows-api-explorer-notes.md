@@ -27,24 +27,37 @@ The x86/x64 architecture defines four privilege levels, "rings" numbered 0 throu
 - **Ring 3 (User Mode):** where your applications run. Restricted access to hardware, memory, and CPU instructions. An attempt to execute a privileged instruction raises `#GP` (General Protection Fault).
 - **Ring 0 (Kernel Mode):** where the OS kernel, HAL, and device drivers run. Unrestricted. A bug here crashes the entire system.
 
-```
-Ring 3 (User Mode)
-├── win32 applications
-├── Win32 subsystem (csrss.exe)
-├── WoW64 (32-bit on 64-bit)
-└── NTDLL.DLL (user-mode stub layer)
-         ↕ syscall boundary
-Ring 0 (Kernel Mode)
-├── NT Executive
-│   ├── Object Manager
-│   ├── Process Manager
-│   ├── Memory Manager
-│   ├── I/O Manager
-│   ├── Security Reference Monitor
-│   └── Cache Manager
-├── NT Kernel (ntoskrnl.exe)
-├── HAL (hal.dll)
-└── Device Drivers (*.sys)
+```mermaid
+flowchart TD
+  subgraph R3["Ring 3 - User Mode"]
+    A["win32 applications"]
+    B["Win32 subsystem: csrss.exe"]
+    C["WoW64: 32-bit on 64-bit"]
+    D["NTDLL.DLL: user-mode stub layer"]
+  end
+  subgraph R0["Ring 0 - Kernel Mode"]
+    NE["NT Executive"]
+    OM["Object Manager"]
+    PM["Process Manager"]
+    MM["Memory Manager"]
+    IOM["I/O Manager"]
+    SRM["Security Reference Monitor"]
+    CM["Cache Manager"]
+    K["NT Kernel: ntoskrnl.exe"]
+    H["HAL: hal.dll"]
+    DD["Device Drivers: .sys"]
+    NE --> OM
+    NE --> PM
+    NE --> MM
+    NE --> IOM
+    NE --> SRM
+    NE --> CM
+  end
+  D -->|"syscall boundary"| NE
+  classDef stage fill:#14150e,stroke:#b3bd33,stroke-width:1px,color:#e2ddcd;
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  class NE,K,H,DD stage;
+  class A,B,C,D,OM,PM,MM,IOM,SRM,CM step;
 ```
 
 When a user-mode application wants to do anything meaningful (allocate memory, create a process, open a file), it crosses the ring boundary via a system call. This transition is expensive relative to function calls and audited by EDRs.
@@ -91,6 +104,22 @@ ret
 
 The number in `eax` is the **System Service Number (SSN)**. These are not stable across Windows versions. `NtAllocateVirtualMemory` is `0x18` on Windows 10 21H2 and a different value on Windows 11 22H2.
 
+### SharedUserData
+
+`SharedUserData` is the user-mode alias for `_KUSER_SHARED_DATA`, a kernel structure mapped **read-only** at `0x7FFE0000` in every user-mode process on x64 Windows. The kernel keeps this page updated; ring-3 code can read it without a syscall. It holds frequently-polled data: tick count, system time, time zone bias, and the syscall mechanism selector at `+0x308` (the `SystemCall` field). The branch `jne KiFastSystemCall` switches to the `int 0x2e` path on VMs or old hardware that cannot use `syscall` in user mode. On native x64 this check is always false — the `syscall` instruction is mandatory in AMD64 — so the branch exists purely for backward compatibility.
+
+```
+0x7FFE0000   KUSER_SHARED_DATA base (read-only to ring 3)
++0x000  TickCountLowDeprecated  ULONG
++0x004  TickCountMultiplier     ULONG
++0x008  InterruptTime           KSYSTEM_TIME
++0x014  SystemTime              KSYSTEM_TIME
++0x02C  TimeZoneBias            KSYSTEM_TIME
++0x308  SystemCall              ULONG  (0 = syscall, 1 = int 0x2e)
+```
+
+Because it needs no syscall, shellcode and injected code use it for timing checks and to pick the call mechanism without touching NTDLL.
+
 This matters for **direct syscalls**: calling `syscall` directly from your code without going through NTDLL, bypassing userland hooks placed by EDRs.
 
 ```c
@@ -121,20 +150,44 @@ NTSTATUS NtAllocateVirtualMemory_syscall(
 
 Tools that implement SSN resolution dynamically: `SysWhispers3`, `Hell's Gate`, `Halo's Gate` (handles patched stubs).
 
+### How Hell's Gate and Halo's Gate resolve SSNs
+
+**Hell's Gate** reads the SSN directly from the NTDLL stub bytes in memory. On an unhooked stub the sequence is:
+
+```
+0x4C 0x8B 0xD1   mov r10, rcx
+0xB8 [4 bytes]   mov eax, <SSN>
+```
+
+The bytes at offset +4 are the SSN. This fails the moment an EDR hooks the stub, because the first bytes are overwritten with a `JMP` or `MOV + JMP`, wiping `0xB8`.
+
+**Halo's Gate** handles patched stubs by looking at neighbors. NT syscall stubs are laid out sequentially in NTDLL's `.text` section with SSNs that increment by exactly 1 between adjacent exports in the sorted export table. If the target stub is patched, Halo's Gate inspects the stub immediately before or after it in the sorted export order:
+
+```
+NtWriteVirtualMemory  ->  SSN = target - 1
+NtAllocateVirtualMemory  ->  SSN = (previous + 1)
+NtReadVirtualMemory   ->  SSN = target + 1
+```
+
+It walks outward (±1, ±2, ...) until it finds an unhooked neighbor and adjusts the recovered SSN by the offset. This works as long as at least one neighbor in the table is unpatched — which is almost always true because EDRs hook only the functions they care about, not the entire table.
+
+**SysWhispers3** automates both techniques and can embed the stub bytes directly into the shellcode or resolve at runtime, with support for EGG hunting (scanning for the `0xB8` pattern across the NTDLL `.text` range when the export table is unavailable).
+
 ---
 
 ## the Win32 API hierarchy
 
 ![General architecture: System Processes → Subsystem DLLs → NTDLL.DLL ↕ Kernel Mode (Executive, Drivers, HAL)]({{ '/assets/img/posts/winapi-4.png' | relative_url }})
 
-```
-Win32 API (kernel32.dll, user32.dll, advapi32.dll)
-           ↓
-NTDLL Native API (ntdll.dll)
-           ↓
-System Call Interface (syscall instruction)
-           ↓
-NT Executive (ntoskrnl.exe)
+```mermaid
+flowchart TD
+  A["Win32 API: kernel32.dll, user32.dll, advapi32.dll"] --> B["NTDLL Native API: ntdll.dll"]
+  B --> C["System Call Interface: syscall instruction"]
+  C --> D["NT Executive: ntoskrnl.exe"]
+  classDef stage fill:#14150e,stroke:#b3bd33,stroke-width:1px,color:#e2ddcd;
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  class C,D stage;
+  class A,B step;
 ```
 
 `CreateProcess()` in `kernel32.dll` calls `NtCreateProcess()` in `ntdll.dll`, which executes a syscall into the kernel. The kernel validates arguments, checks security, creates the process object, and returns NTSTATUS.
@@ -151,22 +204,20 @@ EDRs hook at the NTDLL layer (easiest, most stable). Direct syscalls bypass this
 
 Every executable, DLL, and driver on Windows uses the **Portable Executable** format.
 
-```
-┌────────────────────┐
-│  DOS Header        │  "MZ" magic, e_lfanew offset to NT headers
-├────────────────────┤
-│  NT Headers        │  "PE\0\0" + File Header + Optional Header
-├────────────────────┤
-│  Section Table     │  entries for .text, .data, .rdata, .rsrc
-├────────────────────┤
-│  .text             │  executable code
-├────────────────────┤
-│  .data             │  initialized global/static data
-├────────────────────┤
-│  .rdata            │  read-only data, import/export tables
-├────────────────────┤
-│  .rsrc             │  resources
-└────────────────────┘
+```mermaid
+flowchart TB
+  A["DOS Header<br/>MZ magic, e_lfanew offset to NT headers"]
+  B["NT Headers<br/>PE signature + File Header + Optional Header"]
+  C["Section Table<br/>entries for .text, .data, .rdata, .rsrc"]
+  D[".text<br/>executable code"]
+  E[".data<br/>initialized global/static data"]
+  F[".rdata<br/>read-only data, import/export tables"]
+  G[".rsrc<br/>resources"]
+  A --> B --> C --> D --> E --> F --> G
+  classDef stage fill:#14150e,stroke:#b3bd33,stroke-width:1px,color:#e2ddcd;
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  class A,B,C stage;
+  class D,E,F,G step;
 ```
 
 Key fields in `IMAGE_OPTIONAL_HEADER64`:
@@ -182,6 +233,47 @@ IMAGE_DATA_DIRECTORY DataDirectory[16]; // imports, exports, TLS, relocations...
 ```
 
 The **Import Address Table (IAT)** is populated by the loader when the PE is mapped. It holds the resolved addresses of all imported functions. IAT patching (replacing a function pointer with your own) is one of the simplest hooking techniques.
+
+### Data directory index reference
+
+`DataDirectory[16]` in the optional header maps to named entries by index (from `winnt.h`):
+
+| Index | Constant | Contents |
+|-------|----------|---------|
+| 0 | `IMAGE_DIRECTORY_ENTRY_EXPORT` | Export table — function names, ordinals, RVAs |
+| 1 | `IMAGE_DIRECTORY_ENTRY_IMPORT` | Import descriptor array — DLL names, IAT |
+| 2 | `IMAGE_DIRECTORY_ENTRY_RESOURCE` | `.rsrc` section root |
+| 3 | `IMAGE_DIRECTORY_ENTRY_EXCEPTION` | `.pdata` — RUNTIME_FUNCTION array for stack unwinding |
+| 4 | `IMAGE_DIRECTORY_ENTRY_SECURITY` | Authenticode signature (file offset, not RVA) |
+| 5 | `IMAGE_DIRECTORY_ENTRY_BASERELOC` | Base relocation blocks |
+| 6 | `IMAGE_DIRECTORY_ENTRY_DEBUG` | Debug directory array |
+| 9 | `IMAGE_DIRECTORY_ENTRY_TLS` | TLS directory (callbacks, static TLS slot) |
+| 10 | `IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG` | Load config — SEH table, CFG bitmap, stack cookie, CET |
+| 12 | `IMAGE_DIRECTORY_ENTRY_IAT` | IAT range (used by loader to mark pages RO after binding) |
+| 14 | `IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR` | CLR/.NET metadata |
+
+Entries 7, 8, 11, and 13 exist but are rarely populated in modern PE files. Security (index 4) uses a **file offset**, not an RVA — the only directory that does — because the Authenticode signature covers the mapped image and must be located before mapping.
+
+Index 3 (exception directory) is critical for x64: it is the `RUNTIME_FUNCTION` array that tells the unwinder where each function's prologue, epilogue, and frame data are. Shellcode that does not register a `RUNTIME_FUNCTION` entry will cause the unwinder to abort when an exception crosses its frame, which is why many injectors either avoid exceptions entirely or register a synthetic unwind record.
+
+### TLS callbacks: execution before entry point
+
+The TLS directory (index 9) points to an `IMAGE_TLS_DIRECTORY64`:
+
+```c
+typedef struct _IMAGE_TLS_DIRECTORY64 {
+    ULONGLONG StartAddressOfRawData;
+    ULONGLONG EndAddressOfRawData;
+    ULONGLONG AddressOfIndex;
+    ULONGLONG AddressOfCallBacks;   // null-terminated array of PIMAGE_TLS_CALLBACK
+    DWORD     SizeOfZeroFill;
+    DWORD     Characteristics;
+} IMAGE_TLS_DIRECTORY64;
+
+typedef VOID (NTAPI *PIMAGE_TLS_CALLBACK)(PVOID DllHandle, DWORD Reason, PVOID Reserved);
+```
+
+`AddressOfCallBacks` is a null-terminated VA array. The loader calls every entry with `DLL_PROCESS_ATTACH` **before** jumping to `AddressOfEntryPoint`. This fires before `main()`, before any C runtime init, and before a debugger's initial breakpoint if the loader path is not instrumented. Malware uses TLS callbacks as an anti-debug or anti-analysis hook that runs before the expected execution start. Analysis tip: check `IMAGE_DIRECTORY_ENTRY_TLS` in `DataDirectory` before setting a breakpoint at OEP.
 
 ### parsing a PE header in C
 
@@ -240,6 +332,48 @@ A user-mode process on Windows x64 has a 128TB virtual address space:
 ```
 
 The **Process Environment Block (PEB)** and **Thread Environment Block (TEB)** are critical structures. `gs:[0x60]` in 64-bit mode points to the TEB, which contains a pointer to the PEB.
+
+Key PEB fields in x64 layout (offsets from `dt _PEB` in WinDbg, stable across Win10/Win11):
+
+```
+PEB (x64)
++0x000  InheritedAddressSpace     BOOLEAN
++0x001  ReadImageFileExecOptions  BOOLEAN
++0x002  BeingDebugged             BOOLEAN   ← debugger check #1
++0x003  BitField                  BOOLEAN   (includes ImageUsesLargePages, IsProtectedProcess, ...)
++0x008  Mutant                    HANDLE
++0x010  ImageBaseAddress          PVOID
++0x018  Ldr                       PPEB_LDR_DATA   ← module list root
++0x020  ProcessParameters         PRTL_USER_PROCESS_PARAMETERS
++0x028  SubSystemData             PVOID
++0x030  ProcessHeap               PVOID     ← heap Flags/ForceFlags differ under debugger
++0x0BC  NtGlobalFlag              ULONG     ← debugger check #2 (0x70 when debugger-created)
+```
+
+The three classic debugger-detection checks from PEB:
+
+```c
+// 1. BeingDebugged at PEB+0x2
+PPEB peb = (PPEB)__readgsqword(0x60);   // TEB
+peb = *(PPEB*)((PBYTE)peb + 0x60);      // PEB pointer in TEB is at TEB+0x60 on x64
+// simpler: __readgsqword(0x60) gives TEB; PEB ptr is at TEB+0x60
+PPEB peb2;
+__asm__ volatile ("mov %%gs:0x60, %0" : "=r"(peb2));
+if (peb2->BeingDebugged) { /* debugger attached */ }
+
+// 2. NtGlobalFlag at PEB+0xBC
+// 0x70 = FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | FLG_HEAP_VALIDATE_PARAMETERS
+ULONG ntgf = *(ULONG*)((PBYTE)peb2 + 0xBC);
+if ((ntgf & 0x70) == 0x70) { /* created under debugger */ }
+
+// 3. ProcessHeap flags
+PVOID heap = peb2->ProcessHeap;
+ULONG flags      = *(ULONG*)((PBYTE)heap + 0x70);   // HEAP.Flags
+ULONG forceflags = *(ULONG*)((PBYTE)heap + 0x74);   // HEAP.ForceFlags
+// normal: Flags=2 ForceFlags=0; under debugger: Flags != 2 or ForceFlags != 0
+```
+
+The heap offsets (`+0x70`, `+0x74`) are for the x64 heap header and have remained stable across Windows 10 and 11. The `NtGlobalFlag` offset `0xBC` applies to the x64 PEB; on the 32-bit PEB inside WoW64 it is at `0x068`. Use `dt ntdll!_PEB` or `dt ntdll!_HEAP` in WinDbg to verify against the running target.
 
 ---
 

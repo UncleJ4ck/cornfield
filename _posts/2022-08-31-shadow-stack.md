@@ -26,19 +26,18 @@ Understanding why each defense failed is the only way to understand why shadow s
 
 Before any mitigations, a stack buffer overflow was trivially exploitable. Overflow the buffer, overwrite the saved return address, point it at shellcode, function returns, shellcode executes.
 
+```mermaid
+flowchart TB
+  A["return addr<br/>attacker overwrites this"] --> B["saved rbp"]
+  B --> C["local vars"]
+  C --> D["buffer[64]<br/>overflow starts here"]
+  classDef stage fill:#14150e,stroke:#b3bd33,stroke-width:1px,color:#e2ddcd;
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  class A,D stage;
+  class B,C step;
 ```
-high address
-┌────────────┐
-│ return addr│  ← attacker overwrites this
-├────────────┤
-│ saved rbp  │
-├────────────┤
-│ local vars │
-├────────────┤
-│ buffer[64] │  ← overflow starts here
-└────────────┘
-low address
-```
+
+The diagram runs high address at the top to low address at the bottom, the way the stack grows down.
 
 The attacker needed the stack to be executable. That assumption lasted until 2004.
 
@@ -68,18 +67,16 @@ On 64-bit, entropy is ~28 bits. Harder but not impossible:
 
 A **canary** is a random value placed on the stack between the buffer and the saved return address. Before returning, the function checks it is intact. If not, the program terminates.
 
-```
-┌────────────┐
-│ return addr│
-├────────────┤
-│ saved rbp  │
-├────────────┤
-│  canary    │  ← checked before ret
-├────────────┤
-│ local vars │
-├────────────┤
-│ buffer[64] │
-└────────────┘
+```mermaid
+flowchart TB
+  A["return addr"] --> B["saved rbp"]
+  B --> C["canary<br/>checked before ret"]
+  C --> D["local vars"]
+  D --> E["buffer[64]"]
+  classDef stage fill:#14150e,stroke:#b3bd33,stroke-width:1px,color:#e2ddcd;
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  class C stage;
+  class A,B,D,E step;
 ```
 
 Bypasses:
@@ -120,21 +117,29 @@ When a function is called, the hardware does two things:
 
 On return, the hardware compares the return address on the normal stack against the shadow stack. If they differ, control flow violation, the processor faults.
 
-```
-                 normal stack              shadow stack
-call foo() →    [ret addr: 0x401050]   [ret addr: 0x401050]
-                [saved rbp          ]
-                [locals             ]
-                [buffer             ]   ← attacker overflows this
-
-overflow →      [ret addr: 0xdeadbeef]  [ret addr: 0x401050]
-                                                ↑
-                                        mismatch → #CP fault
+```mermaid
+flowchart TB
+  subgraph normal["normal stack"]
+    direction TB
+    N1["ret addr: 0xdeadbeef<br/>after overflow"] --> N2["saved rbp"]
+    N2 --> N3["locals"]
+    N3 --> N4["buffer<br/>attacker overflows this"]
+  end
+  subgraph shadow["shadow stack"]
+    direction TB
+    S1["ret addr: 0x401050<br/>hardware-protected copy"]
+  end
+  N1 -.->|"compare on ret"| S1
+  S1 --> X["mismatch -> #CP fault"]
+  classDef stage fill:#14150e,stroke:#b3bd33,stroke-width:1px,color:#e2ddcd;
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  class N1,X stage;
+  class N2,N3,N4,S1 step;
 ```
 
 ![shadow stack: main stack vs parallel shadow stack with return addresses and CALL/RET flow]({{ '/assets/img/posts/shadow-stack-3.png' | relative_url }})
 
-The shadow stack is mapped `SHADOW_STACK`. Normal store instructions cannot write to it. Only the `SAVEPREVRSP`/`RSTORSSP` instructions and the CPU call/ret microcode can touch it. A regular `mov [shadow_stack_ptr], rax` faults.
+The shadow stack lives in pages with a special encoding in the page tables, read-only to software but marked Dirty, which the MMU treats as the shadow-stack attribute. Ordinary stores cannot write there: a regular `mov [ssp], rax` faults. Only the CALL/RET microcode and the dedicated CET instructions touch it: `INCSSP` (unwind by N slots), `RDSSP` (read `SSP` into a GPR), `RSTORSSP` and `SAVEPREVSSP` (switch shadow stacks through a verified restore token), and the privileged `WRSS`/`WRUSS` (write, gated by the `WR_SHSTK_EN` bit). User code has no unprivileged write primitive into it. That is the whole point: the return-address copy sits in memory the buggy function physically cannot reach.
 
 ### Intel CET
 
@@ -154,6 +159,16 @@ grep CET /boot/config-$(uname -r)
 #include <asm/prctl.h>
 arch_prctl(ARCH_SHSTK_ENABLE, ARCH_SHSTK_SHSTK);
 ```
+
+### the control surface
+
+CET state is MSR-driven, one set per privilege level:
+
+- `IA32_U_CET` (user) and `IA32_S_CET` (supervisor) hold the enable bits: `SH_STK_EN` (shadow stack on), `WR_SHSTK_EN` (allow `WRSS` to write the shadow stack), `ENDBR_EN` (IBT on), plus the legacy-code and no-track bits.
+- `SSP` is the shadow stack pointer, a dedicated register, not a GPR. You cannot `mov` into it. Read it with `RDSSP`; it only advances through CALL/RET and the CET instructions.
+- The live SSP is backed per ring by `IA32_PL3_SSP` (user) and `IA32_PL0/1/2_SSP` (kernel). `IA32_INTERRUPT_SSP_TABLE_ADDR` selects a shadow stack on interrupt delivery, so a ring transition always lands on a known-good stack.
+
+Switching stacks (signal handlers, `makecontext`, green threads) cannot just write a new `SSP`. The target shadow stack must carry a *restore token* at its top: `RSTORSSP` validates that token before adopting the stack, and `SAVEPREVSSP` leaves one behind on the old one. That token dance is why glibc needed explicit shadow-stack support for `swapcontext`, and why early CET broke `longjmp`-heavy and coroutine code.
 
 ### performance
 
@@ -289,6 +304,8 @@ objdump -d vuln_ibt | grep -A4 '<win>\|<vuln>\|<main>'
 
 An indirect jump (`jmp rax`) to any address not starting with `ENDBR64` raises `#CP`. Mid-function gadgets are eliminated. JOP chains have no valid landing pads.
 
+The encoding `f3 0f 1e fa` is deliberate: it was a multi-byte NOP (`nop`) before CET existed, so a binary compiled with `-fcf-protection` still runs unchanged on pre-Tiger-Lake CPUs, which just execute the marker as a no-op. Only call/jmp targets get the marker, never `ret` targets, since returns are covered by the shadow stack instead. The loader also keeps a legacy-code bitmap so a CET process can call into a non-CET shared library by exempting those pages from IBT.
+
 Shadow stack (blocks `ret` chains) + IBT (blocks `jmp/call` chains) closes both main attack surfaces simultaneously.
 
 ---
@@ -306,6 +323,8 @@ Shadow stack breaks classical ROP. It does not eliminate exploitation.
 **TOCTOU / race conditions**: entirely outside the threat model.
 
 **SSP corruption**: the shadow stack pointer (`SSP`) is readable in user mode via `RDSSPQ`. If a kernel bug lets an attacker corrupt `IA32_PL3_SSP`, they can point the SSP at attacker-controlled memory. Not trivial, but not theoretical.
+
+**Writable shadow stack (`WRSS`)**: some runtimes ask the kernel to set `WR_SHSTK_EN` so `WRSS` can edit the shadow stack from user mode, needed by certain JITs, unwinders, and checkpoint/restore. With it on, an arbitrary-write primitive can forge shadow-stack entries and classical ROP is back. It is off by default; treat any process that opts in as effectively unprotected against return-address corruption.
 
 ---
 
