@@ -732,6 +732,45 @@ That is the whole arc. A static tester became a loop, the loop learned to read r
 
 ---
 
+## v4.0: teaching the ladder to learn
+
+Everything above this point, the ladders were my opinion. I hand-ordered which strategy fires first against each model class, from reading papers and watching runs. That bugged me for the same reason the static prompt list bugged me at the top: it is a frozen guess that does not update when the data disagrees. So v4.0 is three mechanisms borrowed from biology, all optional, all off by default, that let the ladder learn from its own results instead of from me.
+
+Upfront: "borrowed from biology" is mostly a naming layer. The useful core of each one is a boring, well-understood algorithm. Nature is where I got the intuition, not where I got the implementation. If you simulate cells you have wasted your time. If you use the math the cell is already doing, you have a feature.
+
+**Stigmergy, the ant-pheromone one.** Ants lay pheromone on paths that worked and the colony converges on good routes with no central planner. The framework already throws away exactly this signal: every run logs which strategy broke which model, then forgets it. So the bandit keeps it. Per (model, strategy) it runs Thompson sampling, and the selection score blends the hand-tuned position with the learned sample, weighted by how much evidence exists. With zero evidence the weight is zero, so a cold store reproduces my hand-tuned order exactly. As wins and losses pile up the data takes over, and old wins decay so a technique a provider has since patched fades on its own. The ladder stops being my opinion and becomes the model's own track record.
+
+**Clonal memory, the immune one.** Your immune system keeps the antibodies that bound before and answers a re-exposure faster. So when a payload framing produces a confirmed break, the framing is saved per test and replayed first the next time that exact test runs against that exact model. A re-exposure that still works is an instant win at round zero. A framing that has gone stale just fails the replay and falls through to the normal loop. Memory, not a cache.
+
+**Marginal value, the foraging one.** An animal leaves a food patch when its marginal return drops below the habitat average. The framework's give-up logic was a crude heuristic; the marginal value theorem makes it principled. It is the weakest and most conservative of the three, because the data already showed me breaks at round 18, so it never abandons a run before a high floor or while a multi-turn tail is still pending.
+
+Then I tested it live, and it taught me two things by breaking.
+
+The first run recorded the winning strategies as failures. I had assumed tests run one at a time. They do not. They run four-wide in a thread pool, and four per-test copies of the store were racing on save and clobbering each other, so the winners got overwritten by the losers. The fix was one shared, locked store with the bandit and memory split into separate files. Obvious in hindsight, invisible until the real runtime showed me. This is the whole reason you test on the actual thing and not the model of it in your head.
+
+The second run hit a clean hundred percent, and one of the breaks was a lie. A test that had never broken reported a memory-cell hit. Memory was keyed by category, not by the specific test, so a payload that solved one test was being replayed against a different test in the same category and the judge waved it through. A false positive, the exact thing the two-evaluator judge exists to prevent, smuggled back in through a sloppy key. Keying memory by the specific test killed it. The lesson is the one this project keeps teaching: the false positive does not announce itself, you have to go looking for it with a control.
+
+---
+
+## did the learning actually help
+
+Mechanisms working is not the same as mechanisms helping, so I ran the experiment. Control is the hand-tuned ladder. Treatment is the bandit only, with a frozen seed so I measured the reorder and not online drift, and with memory cells off so they could not short-circuit the metric I cared about. Two models, the same six guardrail tests, three repetitions each, six rounds of budget.
+
+| model | ladder | ASR per rep | mean ASR | mean break-round |
+|---|---|---|---|---|
+| gemini-2.5-flash (frontier) | hand-tuned | 100, 83, 100 | 94.4% | 4.04 |
+| gemini-2.5-flash (frontier) | learned | 83, 100, 83 | 88.9% | **2.78** |
+| deepseek-chat (aligned) | hand-tuned | 67, 100, 100 | 88.9% | 1.53 |
+| deepseek-chat (aligned) | learned | 83, 83, 100 | 88.9% | 1.71 |
+
+Read the last column. On the frontier model the learned ladder broke the same tests in 2.78 rounds instead of 4.04, about thirty percent fewer, and it held across all three reps. It does not break more tests, the success rate is flat within noise. It breaks the same tests faster. That makes sense once you say it out loud: inside a fixed round budget the winning strategy eventually fires either way, so the rate saturates and the only thing left to win is how soon. The bandit front-loads the winner.
+
+On the aligned model, nothing. DeepSeek folds at round one or two no matter what, so there is no ordering left to improve and the tiny difference is noise. That is the honest, slightly boring result: the learning helps exactly where breaks are late and the rounds are expensive, and it is inert where they are early and cheap. Thirty percent fewer of the slow frontier calls per break is a real saving, and it lands precisely where the calls actually cost something.
+
+The caveats, because a clean number from a small run is how you fool yourself. Six tests, three reps, one category, two models. Directional and replicated, not proof. And the frontier seed was built partly from earlier runs against that same model, so this measures reuse of a model's own history, which is the entire point of per-model learning but is not the same as generalizing to a model it has never seen. With no prior data the bandit is a no-op by construction. A real effect, measured honestly, with its limits stated. That is all I claim.
+
+---
+
 ## what I would change
 
 If I rebuilt this tomorrow, three things.
