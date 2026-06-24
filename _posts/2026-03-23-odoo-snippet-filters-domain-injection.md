@@ -36,10 +36,10 @@ def get_dynamic_filter(self, filter_id, **kwargs):
 `search_domain` arrives in `**kwargs` and is never validated. `_render` hands it to `_prepare_values`, which splits into two paths in `addons/website/models/website_snippet_filter.py`:
 
 ```python
-# filter_id path — NOT vulnerable, runs as the public user
+# filter_id path: NOT vulnerable, runs as the public user
 records = self.env[model_name].sudo(False).with_context(...).search(domain, ...)
 
-# action_server_id path — VULNERABLE, runs as SUPERUSER
+# action_server_id path: VULNERABLE, runs as SUPERUSER
 return self.action_server_id.with_context(
     dynamic_filter=self,
     limit=limit,
@@ -87,6 +87,21 @@ The widget renders a product (true) or renders nothing (false). Lengthen the pre
 
 The reason group-restricted and private fields are reachable at all: Odoo enforces `groups=`, `USER_PRIVATE_FIELDS`, and `check_field_access_rights` during **read** (`_read_from_database`), not during **domain evaluation** in `.search()`. A field you can never read can still be filtered on, and filtering is enough to infer it bit by bit.
 
+## 18 and 19 are the same bug with a different surface
+
+I confirmed this on both Odoo 18.0 and 19.0. The vulnerable shape survived the rewrite between them; only the plumbing changed:
+
+| | 18.0 | 19.0 |
+|---|---|---|
+| route type | `type='json'` | `type='jsonrpc'` |
+| handler signature | named params (`search_domain=None`) | `**kwargs` |
+| domain merge | `expression.AND([domain, search_domain])` | `Domain.AND([...])` |
+| controller | `main.py:415-420` | `main.py:426-435` |
+| employee endpoint merge | `expression.AND([domain, ...])` | `Domain(domain) & Domain(...)` |
+| single-record branch | not present | present (the residual below) |
+
+The merge moved from the old `expression.AND` helper to the new `Domain` class, which is the API the post above shows. Neither form restricts field paths, so the oracle payload is byte-identical across versions; only the route's `type` changes how you frame the JSON-RPC body. The injection, the SUPERUSER path, and the traversal all carry over unchanged.
+
 ## the negative control, because an oracle you cannot falsify is noise
 
 Every extracted path was confirmed against a control pattern that must not match. Probe a real prefix and a guaranteed-miss prefix on the same field:
@@ -97,6 +112,33 @@ Every extracted path was confirmed against a control pattern that must not match
 ```
 
 If the nonsense prefix had also matched, the "signal" would be a computed/non-stored field giving a constant answer, not a real read. It does not match. The bit is real and you can turn it off on demand.
+
+That control is not theoretical, it caught three fields that look extractable and are not. `res.users.password` is a computed, non-stored field, so a domain leaf on it never reaches SQL and `=like 'anything%'` returns every row. Same for `res.users.totp_secret`. Both fail the control: the nonsense prefix matches, so there is no bit. `res.partner.bank.acc_number` is stored but ships a custom `_search` override that breaks `=like`/`=ilike`, returning zero for every pattern. The IBAN still leaks, just through `sanitized_acc_number`, a stored computed field with no override. Without the control I would have "extracted" password hashes that were never there.
+
+## the walk, and why each character is cheap
+
+The oracle leaf is one line, `[(field, "=like", prefix + "%")]`, and the only thing that makes it exact is escaping the LIKE wildcards in the prefix before sending it:
+
+```python
+def esc(s):
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+```
+
+Without that, an underscore in a real value matches any character and the prefix drifts. With it, `=like` is an exact prefix test.
+
+The naive walk tries every character in the charset at each position, so a 70-character alphabet costs up to 70 requests per character recovered. My Odoo 19 PoC replaces that with a binary search over the sorted charset using the `>=` operator, which orders lexically the same way Python sorts:
+
+```python
+# narrow the next character to one of N by log2(N) range probes
+if q(base + [(field, "=like", prefix + "%"), (field, ">=", prefix + sorted_chars[mid])]):
+    lo = mid
+else:
+    hi = mid - 1
+```
+
+That drops each character from O(charset) to about 6 probes, and a parallel per-character probe is the fallback when ordering does not behave. One more guard earned its place: a runaway detector that trims the tail when the same character repeats four times, because a misconfigured leaf can loop forever appending the same byte.
+
+Enumerating *every* value of a field, not just one, hit a subtlety in the ORM. The obvious move is to extract one value, then exclude it with `[(field, '!=', extracted)]` and extract the next. That works on direct columns and breaks on relational traversals. A one2many or many2many leaf compiles to `EXISTS`, so `('user_ids.login', '!=', 'admin')` reads as "exists a related user whose login is not admin", which is true the moment two users exist. The exclusion never narrows. The fix is to bucket by first character: scan which leading characters have data, then extract per bucket and only exclude inside a shared prefix where the set is small. A domain is a query language, and `!=` on a join is `NOT (column = X)` only when you forget the join is an `EXISTS`.
 
 ## what comes out, ranked by how much it should never be readable unauthenticated
 
