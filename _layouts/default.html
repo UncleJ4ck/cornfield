@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
   {%- include head.html -%}
-  <body>
+  <body class="{% if page.layout == 'post' %}is-post{% endif %}">
+    <a href="#main-content" class="skip-link">skip to content</a>
     <div class="atmos" aria-hidden="true">
       <div class="atmos-scene"></div>
       <div class="atmos-fog atmos-fog--low"></div>

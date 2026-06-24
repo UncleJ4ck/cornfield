@@ -21,7 +21,7 @@ $straw:       #c8aa66;
 // bone / parchment
 $text:        #e2ddcd;
 $text-sec:    #989484;
-$text-muted:  #514f43;
+$text-muted:  #847f6e;   // lifted from #514f43 (2.3:1, sub-AA) to clear WCAG AA on bg and cards
 
 $border:      #1e1f14;
 $border-mid:  #2e3020;
@@ -152,6 +152,11 @@ body::after {
   .atmos-scene { opacity: 0.6; }
 }
 
+// Post pages are for reading: freeze and dim the scene and drop the live fog so
+// dense long-form text is not competing with a moving backdrop.
+.is-post .atmos-scene { animation: none; opacity: 0.3; }
+.is-post .atmos-fog { display: none; }
+
 a {
   color: $acc;
   text-decoration: none;
@@ -164,6 +169,21 @@ a {
     outline-offset: 3px;
     border-radius: 2px;
   }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 300;
+  background: $bg-lift;
+  color: $acc;
+  font-size: 0.72rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid $acc-dim;
+  border-radius: 0 0 3px 0;
+
+  &:focus { left: 0; }
 }
 
 .site-nav {
@@ -367,10 +387,10 @@ a {
 }
 
 .hero-sep {
-  font-size: 0.72rem;
-  color: $text-muted;
-  letter-spacing: -0.04em;
-  margin-bottom: 0.75rem;
+  height: 0;
+  border-top: 1px dashed $border-mid;
+  max-width: 22rem;
+  margin: 0.25rem 0 0.85rem;
   user-select: none;
 }
 
@@ -781,6 +801,22 @@ a.sh-label {
     margin: 1.25rem auto;
     display: block;
   }
+}
+
+// Reading measure: cap the text-bearing elements so long-form prose holds a
+// ~75-char line, while code blocks, tables, and images keep the full column.
+.post .prose > p,
+.post .prose > ul,
+.post .prose > ol,
+.post .prose > h1,
+.post .prose > h2,
+.post .prose > h3,
+.post .prose > h4,
+.post .prose > h5,
+.post .prose > blockquote,
+.post .prose > .callout-key,
+.post .prose > .callout-warn {
+  max-width: 40rem;
 }
 
 .post-header {
