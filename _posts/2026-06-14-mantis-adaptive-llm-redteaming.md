@@ -640,22 +640,21 @@ This is why the limitations section is not a formality.
 
 This is the finding that outlived every individual jailbreak. Stop sorting models by how often they break and sort them by *how* they break.
 
-```
- aligned          framing works. format exploit and policy puppetry close
- (Llama/Qwen/     most tests by round 2. you reframe the request, the model
-  Kimi/DeepSeek)  complies. obfuscation barely needed. they want to help.
-
- Claude           framing does almost nothing. single-shot bounces every
- (Haiku/Sonnet/   time. it only falls to multi-turn accumulation, and when
-  Opus)           it falls it falls all at once. every Opus finding needed
-                  6+ rounds, several needed 12+. it holds at confidence 1.0
-                  through the early turns, then yields whole. no gradual
-                  softening. a cliff, not a slope.
-
- o4-mini /        neither worked, originally. refuses framing in 2-4s.
- GPT-5.5          accumulation does not move it because it re-judges every
-                  turn from scratch. this was a wall, not a slope, until
-                  the reasoning strategies put a crack in o4-mini.
+```mermaid
+flowchart TD
+  Q["sort models by HOW they break, not how often"]
+  A["aligned · Llama, Qwen, Kimi, DeepSeek<br/>framing works. format exploit + policy puppetry close most tests by round 2.<br/>bigger is not safer: more capability means a better compliant reframe"]
+  C["Claude · Haiku, Sonnet, Opus<br/>framing does almost nothing, single-shot bounces.<br/>falls only to multi-turn accumulation, and falls all at once.<br/>holds at conf 1.0 then yields whole. a cliff, not a slope (6+ rounds, often 12+)"]
+  R["o4-mini / GPT-5.5<br/>neither framing nor accumulation. refuses in 2-4s, re-judges every turn from scratch.<br/>a wall, not a slope, until the v3.9 reasoning strategies cracked o4-mini"]
+  Q --> A
+  A -->|"more resistant"| C
+  C -->|"more resistant"| R
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  classDef warm fill:#14150e,stroke:#b3bd33,color:#e2ddcd;
+  classDef hard fill:#14150e,stroke:#c97a6d,color:#e2ddcd;
+  class Q,A step;
+  class C warm;
+  class R hard;
 ```
 
 Three mechanisms, not three settings on one dial. The aligned models evaluate the *frame*: change what the request appears to be and the answer changes with it. Claude evaluates the frame too but holds a far harder line, and its weakness is conversational commitment, the gap between what it already agreed to and what you ask next. The top reasoning models appeared to evaluate each turn's content on its own terms, mostly ignoring both the frame and the history.
@@ -664,7 +663,7 @@ I want to be careful with that last sentence, because "appeared to" is doing rea
 
 The "bigger is not safer" pattern in the aligned tier has a plausible explanation from how RLHF training works. The safety training on these models is a fine-tuning layer applied to a base model that was trained to be maximally helpful and coherent. Scale increases both the base capability and the helpfulness drive, but the safety fine-tuning is applied to a fixed training distribution of adversarial prompts. A larger model that is better at understanding what the human wants is also better at finding interpretations of a request that satisfy the stated goal. Framing attacks work by providing an alternative goal interpretation; a more capable model has more interpretive flexibility, which means it is better at finding the reframe that lets it comply. The 100% rates on Kimi K2 (1T parameters) and DeepSeek V3.2 support this: scale bought more capability across the board, including better capability to find compliant reframings. The safety training did not scale at the same rate as the helpfulness.
 
-The Claude failure mode, the cliff rather than a slope, also has a structural explanation. Constitutional AI and the broader RLHF alignment used on Claude trains the model to reason about its own values and refuse based on principle rather than surface pattern-matching. That is more robust to framing. But the same training instills a consistency norm: the model tracks what it has already agreed to across a conversation and tries to stay coherent with its prior outputs. Crescendo-style attacks exploit that norm directly. The model finds itself in a position where refusing the current request implies inconsistency with what it already said. The multi-turn accumulation strategies are aimed at creating exactly that position. The data shows it requires more rounds on Claude than on any other model (11.4 average for Opus), and the breaks happen in a single step rather than a gradual softening: once the accumulated context creates sufficient pressure on the consistency norm, the model yields completely rather than partially. That cliff shape is the consistency norm asserting itself, then breaking, rather than a threshold that erodes gradually.
+The Claude failure mode, the cliff rather than a slope, also has a structural explanation. Constitutional AI and the broader RLHF alignment used on Claude trains the model to reason about its own values and refuse based on principle rather than surface pattern-matching. That is harder to fool with framing. But the same training instills a consistency norm: the model tracks what it has already agreed to across a conversation and tries to stay coherent with its prior outputs. Crescendo-style attacks exploit that norm directly. The model finds itself in a position where refusing the current request implies inconsistency with what it already said. The multi-turn accumulation strategies are aimed at creating exactly that position. The data shows it requires more rounds on Claude than on any other model (11.4 average for Opus), and the breaks happen in a single step rather than a gradual softening: once the accumulated context creates sufficient pressure on the consistency norm, the model yields completely rather than partially. That cliff shape is the consistency norm asserting itself, then breaking, rather than a threshold that erodes gradually.
 
 ---
 
@@ -739,6 +738,26 @@ Everything above this point, the ladders were my opinion. I hand-ordered which s
 Upfront: "borrowed from biology" is mostly a naming layer. The useful core of each one is a boring, well-understood algorithm. Nature is where I got the intuition, not where I got the implementation. If you simulate cells you have wasted your time. If you use the math the cell is already doing, you have a feature.
 
 **Stigmergy, the ant-pheromone one.** Ants lay pheromone on paths that worked and the colony converges on good routes with no central planner. The framework already throws away exactly this signal: every run logs which strategy broke which model, then forgets it. So the bandit keeps it. Per (model, strategy) it runs Thompson sampling, and the selection score blends the hand-tuned position with the learned sample, weighted by how much evidence exists. With zero evidence the weight is zero, so a cold store reproduces my hand-tuned order exactly. As wins and losses pile up the data takes over, and old wins decay so a technique a provider has since patched fades on its own. The ladder stops being my opinion and becomes the model's own track record.
+
+```mermaid
+flowchart TD
+  N["candidate strategy<br/>(keyed per model)"]
+  P["hand-tuned position score<br/>1.0 first ... 0.0 last in the ladder"]
+  T["Thompson sample<br/>Beta(1 + wins, 1 + losses), evidence decayed 0.97"]
+  W{"evidence weight<br/>w = eff_n / (eff_n + K)"}
+  B["blended score = (1 - w)·position + w·thompson<br/>highest score fires first"]
+  COLD["eff_n = 0 (no data)<br/>w = 0, exact hand-tuned order"]
+  WARM["eff_n grows<br/>data takes over, patched wins decay out"]
+  N --> P --> B
+  N --> T --> B
+  W --> B
+  W -->|"cold"| COLD
+  W -->|"warm"| WARM
+  classDef stage fill:#14150e,stroke:#b3bd33,color:#e2ddcd;
+  classDef step fill:#1b1c13,stroke:#2e3020,color:#c9c9b8;
+  class B,W stage;
+  class N,P,T,COLD,WARM step;
+```
 
 **Clonal memory, the immune one.** Your immune system keeps the antibodies that bound before and answers a re-exposure faster. So when a payload framing produces a confirmed break, the framing is saved per test and replayed first the next time that exact test runs against that exact model. A re-exposure that still works is an instant win at round zero. A framing that has gone stale just fails the replay and falls through to the normal loop. Memory, not a cache.
 
