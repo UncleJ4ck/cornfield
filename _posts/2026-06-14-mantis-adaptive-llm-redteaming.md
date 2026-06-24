@@ -800,18 +800,6 @@ The caveats, because a clean number from a small run is how you fool yourself. S
 
 ---
 
-## what I would change
-
-If I rebuilt this tomorrow, three things.
-
-First, the default judge would be two genuinely different models, not one model wearing two prompts. The correlated-evaluator weakness is the softest part of the whole design and it is soft on purpose, for cost, which is a bad reason.
-
-Second, I would make every reported rate a distribution by default. Run each test N times, report the spread, kill the single-number habit at the source. The Opus data convinced me that a point estimate for a frontier model is close to meaningless.
-
-Third, I would log the full payload-response pair for every PARTIAL, not just the gap string, so the convergence behavior is auditable after the fact. Right now I trust the gap targeting because I watched it work in the traces. I would rather have it provable.
-
----
-
 ## why this shape, one more time
 
 The thing I will defend hardest is the loop. Static testing answers "does my prompt list work on this model," and that answer expires the moment the provider patches your phrasings. The loop answers "how does this model fail, and what does it take to get there," and that answer survives a patch. When a provider closes the exact wording you used, the corpus tool reports a regression to zero and learns nothing. The loop fingerprints the new refusal, routes to a different layer, and tells you whether the model got genuinely harder to break or just memorized your strings.
