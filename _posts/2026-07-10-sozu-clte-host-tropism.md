@@ -51,7 +51,7 @@ I did the homework before I wrote a word about methodology, because the worst ou
 - **T-Reqs** (Jabiyev et al., CCS 2021) is the grammar-based differential HTTP fuzzer. They generated mutated requests, ran ten server, proxy and CDN technologies in pairs, and found the pairs that disagree on message boundaries. Panel-pair differential fuzzing for HRS is theirs.
 - **The HTTP Garden** (2024) is the one that should have saved me a week. Its whole thesis, in the abstract, is that not all parsing-discrepancy vulnerabilities are visible from a gateway's output alone, so you have to examine how the origin interprets the bytes too. That is exactly the mistake I was about to make, written down and published two years before I made it.
 
-So the method here is not new, and what I did wrong is a re-derivation of the HTTP Garden's central point. The trigger I ended up with is older still. I am flagging both up front so the rest of the post keeps its credibility. The value is one specific, current, unpatched implementation bug, a honest walk to it, and one small thesis at the end. Not a technique.
+So the method here is not new, and what I did wrong is a re-derivation of the HTTP Garden's central point. The trigger I ended up with is older still. I am flagging both up front so the rest of the post keeps its credibility. The value is one specific, current, unpatched implementation bug, an honest walk to it, and one small thesis at the end. Not a technique.
 
 The fuzzer is called Phage. The name carries the lesson, so let me use it.
 
