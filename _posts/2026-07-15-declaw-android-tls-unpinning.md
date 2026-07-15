@@ -38,6 +38,14 @@ Two details cost me an evening each. Hardware breakpoints are per-task: the debu
 
 Proven on the rig against a live, unmodified, uninjected cronet app: the monitor pulls real TLS 1.3 secrets with the correct BoringSSL labels and full key-log lines including `client_random`, entirely out of the app's memory, with zero injection. It needs root, and I will come back to why that is a hard boundary and not a detail.
 
+Claims are cheap, so here is the mechanism proving itself on the rig with the one control that turns it into evidence. A controlled target sets known sentinel bytes as its `client_random` and secret, then calls `ssl_log_secret` in a loop. A separate monitor process, nothing injected into the target, arms the breakpoint and reads them back.
+
+![the hwbp monitor recovering a target's sentinel key material on the arm64 rig, with the wrong-offset negative control]({{ '/assets/img/posts/declaw-hwbp-capture.png' | relative_url }})
+
+Three runs, one job each. The first recovers the sentinel byte-for-byte out of the target's memory. The second arms a function that is never called and gets zero hits, because a hardware breakpoint only fires on executed code and a signal you cannot switch off on demand is not a signal. The third has the target touch TLS only on a worker thread and it still lands, which is the per-task arming from a moment ago: arm the main pid alone and you catch nothing.
+
+Reading TLS keys out of a live process is not a new idea, and it would be dishonest to imply otherwise. There is real prior art: DroidKex, TLSkex, and TeLeScope in academia, and [tlsdump](https://github.com/blechschmidt/tlsdump) as the closest open-source design. Every one of them attaches with `ptrace`. That is the difference that matters against a hardened app, because `ptrace`-attach is exactly what an anti-debug check watches for, and a traced process can read its own tracer straight out of `/proc/self/status`. A hardware breakpoint is programmed by the kernel into the CPU debug registers with no `ptrace` relationship to the target, and the `mempatch` write below goes through `/proc/pid/mem`, which is a privileged read-write, not an attach. Same goal as the prior work, through a channel the anti-tamper packer is not watching.
+
 ## flip the verifier in the running process
 
 The breakpoint reads. Sometimes you would rather write once and let the app talk to your proxy normally, no capture to decode afterward. That is `mempatch`, and it is the rung the decoy at the top belongs to.
@@ -49,6 +57,12 @@ The idea is small. Find `ssl_verify_peer_cert` in the running process and overwr
 For cronet this is the same function. Chromium registers its `net::CertVerifier` through BoringSSL's `SSL_set_custom_verify`, and `ssl_verify_peer_cert` is what calls that callback, so flipping it defeats cronet's pin over TCP. HTTP/3 is the honest exception: a cronet HTTP/3 request rides QUIC over UDP, which a TCP proxy never sees, so there you go back to the key-log path regardless of what you patched.
 
 And you have to patch the right function, which is the whole story I opened with. `find_verify` disassembles both candidates and picks the live `ssl_verify_peer_cert` over the `ssl_reverify_peer_cert` decoy by their AArch64 prologues, because the decoy patches just as cleanly and buys you nothing.
+
+On the real Android 16 conscrypt BoringSSL that is the live function at file offset `0x5aa30` and the decoy at `0x5ad30`, and the difference between them is a single instruction.
+
+![find_verify separating the live verifier from the decoy on a real arm64 BoringSSL, with the disassembled tell]({{ '/assets/img/posts/declaw-find-verify.png' | relative_url }})
+
+The decoy takes a second argument, `send_alert`, and reads it near the top with `mov w19, w1`. The live function takes one argument and never touches `w1`. That one read is the entire discriminator, and the function that has it is the one I patched by mistake.
 
 The negative control is the part I trust, because "the app loaded" is not evidence the bypass worked. Against a PairIP-hardened, certificate-pinned app: unpatched, it dropped the connection with `certificate_unknown` the instant my proxy presented its cert. After the in-memory flip, the same app emitted `POST https://<its API host>/graphql/...` in the clear, through the same proxy, with nothing else changed. Revert the eight bytes and the plaintext goes away. That is the control that means something: one variable, toggled, and the traffic appears and disappears with it.
 
@@ -88,11 +102,30 @@ Everything folds into one command. Point a backend at a patched APK and it boots
 
 Requirements are all Linux-native: an x86_64 host with `adb`, then `qemu-system-aarch64` and edk2 firmware for the arm64 backend, or a JDK and the Android SDK, which `lab avd provision` fetches, for the fast x86 lane.
 
+## reproduce it
+
+The decoy pick is one command against any BoringSSL:
+
+```
+adb pull /apex/com.android.conscrypt/lib64/libssl.so
+python -m declaw.find_verify libssl.so
+# -> LIVE ssl_verify_peer_cert file offset: 0x5aa30
+```
+
+The zero-injection capture, on a rooted arm64 device:
+
+```
+declaw --mode hwbp <package>                                # NSS key log via the breakpoint
+declaw --mode mempatch --offset libssl.so@auto <package>   # flip the live verifier in memory
+```
+
+The ground-truth monitor self-test in the screenshot above, the sentinel target plus the wrong-offset negative control, is `research/hwbp/mon_selftest.sh` in the repo. It is how I keep the tool honest: a run that cannot recover a secret it planted, or that fires on a function it never called, fails the build.
+
 ## what does not work, stated on purpose
 
 A tool writeup that only lists wins is a sales page. Here is where it stops, including the honest gap in this very post.
 
-- **I cannot screenshot the arm64 primitives here.** The two headline rungs, hwbp and mempatch, are arm64-only, and the live emulator I am writing this on is x86, with the arm64 QEMU rig not provisioned in this session. So the hwbp and mempatch sections above are diagrams and captured log lines, not fresh screenshots. That is a real limit of what I could reproduce today, not a claim dressed up.
+- **The live-app decrypts are older than this post.** The hwbp capture above is fresh, run on the arm64 rig for this writeup with its negative control, and the decoy pick is reproduced live on the real BoringSSL. But the end-to-end app numbers, a real cronet app's keys under hwbp and the PairIP app driven to plaintext under mempatch, were captured in earlier sessions and are represented here by their log lines, not re-run against those apps today. The primitive and the function-picking are proven in front of you; the specific app decrypts you are taking on the evidence I logged when I ran them.
 - **32-bit apps on the rig.** The arm64 backend runs a `zygote64_32` build and will launch a 32-bit process, but declaw's mempatch and hardware-breakpoint helpers are arm64-only today. Proving a 32-bit app installs does not mean I can instrument its TLS.
 - **HTTP/3.** Anything a target sends over QUIC is invisible to a TCP proxy, so mempatch buys you nothing there. Use the key-log path and read it in Wireshark.
 - **The hardest integrity checks.** PairIP's code-integrity check still crashes on the first inline hook, so friTap against the most hardened apps yields a capture with no keys. That is exactly the case hwbp and mempatch exist for, because neither places a hook, but it is per-build reverse engineering, not a button.
