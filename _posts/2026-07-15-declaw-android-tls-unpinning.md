@@ -46,11 +46,13 @@ Three runs, one job each. The first recovers the sentinel byte-for-byte out of t
 
 Reading TLS keys out of a live process is not a new idea, and it would be dishonest to imply otherwise. There is real prior art: DroidKex, TLSkex, and TeLeScope in academia, and [tlsdump](https://github.com/blechschmidt/tlsdump) as the closest open-source design. Every one of them attaches with `ptrace`. That is the difference that matters against a hardened app, because `ptrace`-attach is exactly what an anti-debug check watches for, and a traced process can read its own tracer straight out of `/proc/self/status`. A hardware breakpoint is programmed by the kernel into the CPU debug registers with no `ptrace` relationship to the target, and the `mempatch` write below goes through `/proc/pid/mem`, which is a privileged read-write, not an attach. Same goal as the prior work, through a channel the anti-tamper packer is not watching.
 
+The modern version of that question is eBPF, not `ptrace`. Tools like [ecapture](https://github.com/gojue/ecapture) read the same `ssl_log_secret` with an eBPF uprobe, no frida and no `ptrace`, so it is fair to ask why not just do that. Because a uprobe is not as free of the target as it looks. The kernel installs it by writing a trap instruction into the function, a breakpoint byte with the original saved for single-step, into a copy-on-write page the process then reads as its own code. An app that hashes its own `.text`, which is exactly what the PairIP integrity check does, sees that byte. The hardware breakpoint writes nothing into the process; it lives in the CPU debug registers, and the code stays identical to what the loader mapped. That is the claim worth making, and it is stronger than "not ptrace": of every way to watch `ssl_log_secret` fire, the debug register is the one that changes zero bytes of the target and is not a `ptrace` attach, so neither the integrity check nor the anti-debug watch has anything to fire on.
+
 ## flip the verifier in the running process
 
 The breakpoint reads. Sometimes you would rather write once and let the app talk to your proxy normally, no capture to decode afterward. That is `mempatch`, and it is the rung the decoy at the top belongs to.
 
-The idea is small. Find `ssl_verify_peer_cert` in the running process and overwrite its first two instructions through `/proc/pid/mem` with `mov w0, #0 ; ret`, where `0` is BoringSSL's `ssl_verify_ok`. Eight bytes. No file on disk changes, so the APK still passes its own signature check, because the APK on disk was never touched. No frida is loaded, so there is no agent to detect. And a write to `/proc/pid/mem` is not a `PTRACE_ATTACH`, so an anti-debug check watching for a tracer sees nothing. The integrity check has nothing to find, and the app keeps running while its TLS quietly accepts your certificate.
+The idea is small. Find `ssl_verify_peer_cert` in the running process and overwrite its first two instructions through `/proc/pid/mem` with `mov w0, #0 ; ret`, where `0` is BoringSSL's `ssl_verify_ok`. Eight bytes. The APK on disk is untouched, so its signature check still passes; no frida loads, so there is no agent to spot; and a `/proc/pid/mem` write is not a `PTRACE_ATTACH`. The app keeps running while its TLS quietly accepts your certificate.
 
 ![the mempatch flow: find_verify selects the live ssl_verify_peer_cert over the decoy, writes the eight-byte stub over its prologue, and the same handshake goes from rejected to plaintext]({{ '/assets/img/posts/declaw-mempatch.png' | relative_url }})
 
@@ -64,13 +66,11 @@ On the real Android 16 conscrypt BoringSSL that is the live function at file off
 
 The decoy takes a second argument, `send_alert`, and reads it near the top with `mov w19, w1`. The live function takes one argument and never touches `w1`. That one read is the entire discriminator, and the function that has it is the one I patched by mistake.
 
-The negative control is the part I trust, because "the app loaded" is not evidence the bypass worked. Against a PairIP-hardened, certificate-pinned app: unpatched, it dropped the connection with `certificate_unknown` the instant my proxy presented its cert. After the in-memory flip, the same app emitted `POST https://<its API host>/graphql/...` in the clear, through the same proxy, with nothing else changed. Revert the eight bytes and the plaintext goes away. That is the control that means something: one variable, toggled, and the traffic appears and disappears with it.
-
-Here is that control running fresh on the rig against a neutral target, the F-Droid client fetching its repo over conscrypt. A throwaway proxy presents an untrusted cert. Before the patch, conscrypt refuses it with `certificate_unknown`. After declaw writes the eight bytes into the live `ssl_verify_peer_cert` (the `before` bytes are `sub sp,#0x70 ; stp x29,x30`, the real prologue, so it landed on the function and not the decoy), the same request in the same process comes out in the clear.
+The negative control is the part I trust, because "the app loaded" is not evidence the bypass worked. Here it is fresh on the rig against a neutral target, the F-Droid client fetching its repo over conscrypt. A throwaway proxy presents an untrusted cert. Before the patch, conscrypt refuses it with `certificate_unknown`. After declaw writes the eight bytes into the live `ssl_verify_peer_cert` (the `before` bytes are `sub sp,#0x70 ; stp x29,x30`, the real prologue, so it landed on the function and not the decoy), the same request in the same process comes out in the clear.
 
 ![mempatch on the arm64 rig: F-Droid's cert-validated request to f-droid.org goes from certificate_unknown to plaintext after the eight-byte flip]({{ '/assets/img/posts/declaw-mempatch-capture.png' | relative_url }})
 
-The PairIP case is the same eight bytes against an app built to notice, where it also survives the integrity check because nothing was hooked and no file changed. The one thing the in-memory flip does not touch is the Java-layer hostname check, which is why the proxy above mints a per-SNI leaf: `ssl_verify_peer_cert` is the chain trust, and OkHttp still verifies the name separately.
+Revert the eight bytes and it is `certificate_unknown` again. One variable, toggled, and the traffic appears and disappears with it. The same eight bytes work against an app built to notice: against a PairIP-hardened, certificate-pinned app, unpatched it dropped the connection with `certificate_unknown` and patched it emitted `POST https://<its API host>/graphql/...` in the clear, and since nothing was hooked and no file changed, the packer had nothing to fault. The one thing the flip does not touch is the Java-layer hostname check, which is why the proxy mints a per-SNI leaf: `ssl_verify_peer_cert` is the chain trust, and OkHttp verifies the name separately.
 
 ## and for everything that does not fight back
 
@@ -121,9 +121,11 @@ python -m declaw.find_verify libssl.so
 The zero-injection capture, on a rooted arm64 device:
 
 ```
-declaw --mode hwbp <package>                                # NSS key log via the breakpoint
-declaw --mode mempatch --offset libssl.so@auto <package>   # flip the live verifier in memory
+declaw --mode hwbp <package>                                                          # NSS key log via the breakpoint
+declaw --mode mempatch --offset com.android.conscrypt/lib64/libssl.so@auto <package>  # flip the live verifier
 ```
+
+Name the library, not a bare `libssl.so`. An app that also bundles cronet maps `stable_cronet_libssl.so`, whose name contains `libssl.so` too, and a loose match patches that one instead, which reads back as a clean success on the wrong bytes (I did exactly this the first time). `@auto` then runs the finder inside the library you named and picks the live verifier over the decoy.
 
 The ground-truth monitor self-test in the screenshot above, the sentinel target plus the wrong-offset negative control, is `research/hwbp/mon_selftest.sh` in the repo. It is how I keep the tool honest: a run that cannot recover a secret it planted, or that fires on a function it never called, fails the build.
 
