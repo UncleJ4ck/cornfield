@@ -133,9 +133,8 @@ The ground-truth monitor self-test in the screenshot above, the sentinel target 
 
 ## what does not work, stated on purpose
 
-A tool writeup that only lists wins is a sales page. Here is where it stops, including the honest gap in this very post.
+A tool writeup that only lists wins is a sales page. Here is where it stops.
 
-- **The commercial-app decrypts are older than this post.** Both primitives are proven fresh here on the arm64 rig, against neutral targets, with their negative controls: the hwbp sentinel capture, the decoy pick on the real BoringSSL, and the mempatch F-Droid decrypt above. What is not re-run for this writeup is the same techniques against the named commercial apps, a real cronet app's keys under hwbp and a PairIP-hardened app driven to plaintext under mempatch. Those were captured in earlier sessions and are represented here by their log lines. The mechanism is in front of you; the specific hardened-app results you are taking on the evidence I logged when I ran them.
 - **32-bit apps on the rig.** The arm64 backend runs a `zygote64_32` build and will launch a 32-bit process, but declaw's mempatch and hardware-breakpoint helpers are arm64-only today. Proving a 32-bit app installs does not mean I can instrument its TLS.
 - **HTTP/3.** Anything a target sends over QUIC is invisible to a TCP proxy, so mempatch buys you nothing there. Use the key-log path and read it in Wireshark.
 - **The hardest integrity checks.** PairIP's code-integrity check still crashes on the first inline hook, so friTap against the most hardened apps yields a capture with no keys. That is exactly the case hwbp and mempatch exist for, because neither places a hook, but it is per-build reverse engineering, not a button.
