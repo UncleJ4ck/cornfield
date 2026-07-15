@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "declaw"
-subtitle: "everyone can unpin Android TLS until the app detects the injection itself. this is the tool for what you do then: read the session keys off a live process with a CPU hardware breakpoint, or flip the certificate verifier through /proc/pid/mem with nothing loaded inside the app"
+subtitle: "everyone can unpin Android TLS until the app detects the injection itself. this is the tool for what you do then. read the session keys off a live process with a hardware breakpoint, or flip the certificate verifier through /proc/pid/mem, with nothing loaded inside the app"
 date: 2026-07-15
 tags: [ssl-unpinning, android, boringssl, anti-tamper, mempatch, hardware-breakpoints, frida, research]
 category: research
@@ -13,6 +13,8 @@ The first time I flipped an app's certificate check in memory, watched the eight
 The offset was right. The function was wrong. BoringSSL ships two things that look almost identical from the outside: `ssl_verify_peer_cert`, the one that runs on the handshake, and `ssl_reverify_peer_cert`, a session-resumption path that in a fresh handshake never executes. Patch the second one and everything reports success. The bytes change, the verifier returns "trusted", and the app keeps rejecting your cert, because the code you edited was never on the path. It is the cleanest false positive I have hit in a while: a patch that takes, verifies, and does nothing.
 
 That decoy is a good introduction to the actual subject, which is not "how to unpin an Android app". That part is a solved problem, and I will get to it. The subject is the cliff the solved problem walks off the moment the app is built to notice you.
+
+If you want the part that is not in every other pinning writeup, skip to the two rungs that put nothing into the process: [the hardware breakpoint](#read-the-keys-with-a-hardware-breakpoint) and [the in-memory flip](#flip-the-verifier-in-the-running-process). The rest is context for why they have to exist.
 
 ## the part everyone skips
 
