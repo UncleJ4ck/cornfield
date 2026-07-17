@@ -96,7 +96,7 @@ Every rung past the first leans on the same thing: root, arm64, and the app's re
 
 ![the rooted lab device, an Android guest driven entirely over adb]({{ '/assets/img/posts/declaw-lab-device.png' | relative_url }})
 
-The **qemu** backend boots a real aarch64 Android under `qemu-system-aarch64` from your distro's own qemu package, with edk2 firmware. Both the 64-bit and 32-bit ARM instruction sets execute as guest code; it is not an x86 image with a native bridge. On an x86 host the CPU is necessarily QEMU TCG software translation, not physical ARM silicon and not KVM, and I am not going to pretend otherwise. What you can do is make TCG hurt less, and the boot runs with multi-threaded TCG spread across host cores, `pauth-impdef` so pointer-authentication emulation stops being a tax, a gigabyte of translation-block cache, and the vCPU threads pinned to physical cores. It is the only backend that runs declaw's arm64 primitives, which is the entire reason it exists.
+The **qemu** backend boots a real aarch64 Android under `qemu-system-aarch64` from your distro's own qemu package, with edk2 firmware. Getting one onto a laptop used to mean a from-source LineageOS build with the 64 GB of RAM and 400 GiB of disk that AOSP asks for. It does not anymore. The default image is a pinned ~1.1 GB prebuilt: `lab qemu fetch` downloads it and checks it against a known hash, `lab qemu provision` roots it and makes it permissive in place, and you boot. The heavy source build only comes back if you specifically want to run 32-bit apps, which need a separate multilib image. The arm64 instructions execute as guest code, not through an x86 native bridge. On an x86 host the CPU is necessarily QEMU TCG software translation, not physical ARM silicon and not KVM, and I am not going to pretend otherwise. What you can do is make TCG hurt less, and the boot runs with multi-threaded TCG spread across host cores, `pauth-impdef` so pointer-authentication emulation stops being a tax, a gigabyte of translation-block cache, and the vCPU threads pinned to physical cores. It is the only backend that runs declaw's arm64 primitives, which is the entire reason it exists.
 
 The **avd** backend is the fast lane: a rooted x86_64 Google emulator on KVM, for the OkHttp, network-security-config, and static-Flutter work that does not need real ARM. It was throwing away its own boot, though. The emulator launched with `-no-snapshot`, which disables quick-boot entirely, so every run paid a full cold boot.
 
@@ -108,7 +108,7 @@ Everything folds into one command. Point a backend at a patched APK and it boots
 
 ![the lab entrypoint, both backends behind one command on Linux]({{ '/assets/img/posts/declaw-lab-cli.png' | relative_url }})
 
-Requirements are all Linux-native: an x86_64 host with `adb`, then `qemu-system-aarch64` and edk2 firmware for the arm64 backend, or a JDK and the Android SDK, which `lab avd provision` fetches, for the fast x86 lane.
+Requirements are all Linux-native and small: an x86_64 host with `adb`, then `qemu-system-aarch64` and edk2 firmware for the arm64 backend, or a JDK and the Android SDK, which `lab avd provision` fetches, for the fast x86 lane. The arm64 image is a download, so there is no build budget to plan for.
 
 ## reproduce it
 
@@ -135,7 +135,7 @@ The ground-truth monitor self-test in the screenshot above, the sentinel target 
 
 A tool writeup that only lists wins is a sales page. Here is where it stops.
 
-- **32-bit apps on the rig.** The arm64 backend runs a `zygote64_32` build and will launch a 32-bit process, but declaw's mempatch and hardware-breakpoint helpers are arm64-only today. Proving a 32-bit app installs does not mean I can instrument its TLS.
+- **32-bit apps on the rig.** The default arm64 image is 64-bit only. Launching a 32-bit process needs the optional multilib build, the heavy path I just took out of the default, and even there declaw's mempatch and hardware-breakpoint helpers are arm64-only today. Proving a 32-bit app installs does not mean I can instrument its TLS.
 - **HTTP/3.** Anything a target sends over QUIC is invisible to a TCP proxy, so mempatch buys you nothing there. Use the key-log path and read it in Wireshark.
 - **The hardest integrity checks.** PairIP's code-integrity check still crashes on the first inline hook, so friTap against the most hardened apps yields a capture with no keys. That is exactly the case hwbp and mempatch exist for, because neither places a hook, but it is per-build reverse engineering, not a button.
 - **Stock non-rooted phones for the zero-injection rungs.** Cross-process `perf_event_open` and another process's `/proc/pid/mem` both need `ptrace_may_access` to pass, which off a rooted device means same-uid or `CAP_SYS_PTRACE`, and stock Android ships `perf_event_paranoid=3` with SELinux enforcing. hwbp and mempatch are a rooted-or-emulator capability. On a stock phone the answer is still the repackage path.
