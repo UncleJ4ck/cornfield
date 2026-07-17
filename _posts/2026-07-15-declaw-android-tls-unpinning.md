@@ -28,7 +28,7 @@ So the interesting question is not how to unpin. It is what you do when the app 
 
 ![how an app defends its TLS and which declaw rung beats each, split by the line where injection stops working]({{ '/assets/img/posts/declaw-pinning-map.png' | relative_url }})
 
-Everything above the dashed line puts something into the process: a re-signed APK, a gadget, a frida-server. Anti-tamper is the line. Below it are the two rungs that put nothing in, and those are the ones worth writing about, so I am leading with them.
+Everything in the top zone puts something into the process: a re-signed APK, a gadget, a frida-server. Anti-tamper is the boundary between the two zones. The bottom two rungs put nothing in, and those are the ones worth writing about, so I am leading with them.
 
 One boundary belongs up front, because it shapes everything below the line. Both of those rungs need root, on a rooted device or an emulator you own. They read and write another process's memory, and a stock phone does not let you near it: `perf_event_paranoid` is locked down and SELinux is enforcing, so neither the breakpoint nor the `/proc/pid/mem` write is even reachable. That is the honest cost of getting under the injection line. On a stock, non-rooted phone you are back above it, in repackage territory, and the anti-tamper app wins. Everything that follows assumes the one place these rungs apply: a device or emulator where you already hold root.
 
