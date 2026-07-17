@@ -289,6 +289,8 @@ a {
   }
 }
 
+.is-post .site-main { max-width: 1240px; }
+
 .site-main {
   flex: 1;
   max-width: 1080px;
@@ -793,13 +795,18 @@ a.sh-label {
     tr:hover td { background: $bg-card; }
   }
 
+  // Figures break out wider than the reading column so diagrams and terminal
+  // captures render large, while the prose measure stays comfortable.
   img {
-    max-width: 100%;
+    display: block;
+    max-width: min(72rem, 94vw);
     height: auto;
     border: 1px solid $border;
-    border-radius: 3px;
-    margin: 1.25rem auto;
-    display: block;
+    border-radius: 6px;
+    margin-top: 1.75rem;
+    margin-bottom: 1.75rem;
+    margin-left: 50%;
+    transform: translateX(-50%);
   }
 }
 

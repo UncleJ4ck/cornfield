@@ -58,6 +58,10 @@ Reading TLS keys out of a live process is not a new idea, and it would be dishon
 
 The modern version of that question is eBPF, not `ptrace`. Tools like [ecapture](https://github.com/gojue/ecapture) read the same `ssl_log_secret` with an eBPF uprobe, no frida and no `ptrace`, so it is fair to ask why not just do that. Because a uprobe is not as free of the target as it looks. The kernel installs it by writing a trap instruction into the function, a breakpoint byte with the original saved for single-step, into a copy-on-write page the process then reads as its own code. An app that hashes its own `.text`, which is exactly what the PairIP integrity check does, sees that byte. The hardware breakpoint writes nothing into the process; it lives in the CPU debug registers, and the code stays identical to what the loader mapped. That is the claim worth making, and it is stronger than "not ptrace": of every way to watch `ssl_log_secret` fire, the debug register is the one that changes zero bytes of the target and is not a `ptrace` attach, so neither the integrity check nor the anti-debug watch has anything to fire on.
 
+![why the debug register is invisible where an eBPF uprobe is not: the uprobe writes a trap byte a .text hash can see, the breakpoint writes nothing]({{ '/assets/img/posts/declaw-ebpf-vs-hwbp.png' | relative_url }})
+
+The whole difference is one column of that picture. Both read the same function at the same instant. One leaves a byte in the process and one does not, and against an app that hashes its own code that byte is the entire game.
+
 ## flip the verifier in the running process
 
 The breakpoint reads. Sometimes you would rather write once and let the app talk to your proxy normally, no capture to decode afterward. That is `mempatch`, and it is the rung the decoy at the top belongs to.
@@ -67,6 +71,8 @@ The idea is small. Find `ssl_verify_peer_cert` in the running process and overwr
 ![the mempatch flow: find_verify selects the live ssl_verify_peer_cert over the decoy, writes the eight-byte stub over its prologue, and the same handshake goes from rejected to plaintext]({{ '/assets/img/posts/declaw-mempatch.png' | relative_url }})
 
 For cronet this is the same function. Chromium registers its `net::CertVerifier` through BoringSSL's `SSL_set_custom_verify`, and `ssl_verify_peer_cert` is what calls that callback, so flipping it defeats cronet's pin over TCP. HTTP/3 is the honest exception: a cronet HTTP/3 request rides QUIC over UDP, which a TCP proxy never sees, so there you go back to the key-log path regardless of what you patched.
+
+That key-log path is not a fallback in name only, and cronet is where it earned the spot. cronet statically links its own BoringSSL and pins against it, so a system CA does nothing and there is no separate `libssl.so` to point a patch at. friTap reading the traffic secrets straight out of that bundled BoringSSL took the pin apart anyway, and a real cronet-backed endpoint came out decrypted in Wireshark. The pin holds the handshake. It was never holding the keys.
 
 And you have to patch the right function, which is the whole story I opened with. `find_verify` disassembles both candidates and picks the live `ssl_verify_peer_cert` over the `ssl_reverify_peer_cert` decoy by their AArch64 prologues, because the decoy patches just as cleanly and buys you nothing.
 
@@ -92,6 +98,12 @@ Two things the flip deliberately does not do, and you have to handle both. It do
 
 Most apps do not ship anti-tamper, and for those the answer is the boring, reliable rung, which is also where declaw earns its keep as a tool instead of a technique. Doing this by hand means identifying the pinning library, adapting a Frida script to it, fighting the app that ignores your system proxy, then repacking, re-signing every split, and reinstalling, and redoing all of it for the next app. declaw reads the APK, tells you the stack, and picks the rung for you.
 
+The routing is a short decision tree over what the bundle actually contains, in a fixed order. Two of the branches force a capture instead of a patch, and those are the ones that matter: cronet, because its pinned BoringSSL is bundled and no CA or config will ever move it, and anti-tamper, because a re-signed APK is the exact thing it exists to kill. Everything else falls through to a patch built from whatever framework the app is actually using.
+
+![how declaw's auto mode routes an app to a rung from the native libraries and dex strings it finds]({{ '/assets/img/posts/declaw-routing.png' | relative_url }})
+
+That decision tree is the `strategy()` function, not a description of it. It runs against the pulled bundle before anything is patched, which is why declaw can refuse to hand you an APK that would only get rejected or killed.
+
 ![declaw's auto analysis reading a real app's TLS stack and picking a strategy]({{ '/assets/img/posts/declaw-auto-analysis.png' | relative_url }})
 
 That is a real run against the open-source F-Droid client. declaw pulled the base and every split, scanned the native libraries and the dex string table, found OkHttp with Java pinning, and routed to the repackage path, all before touching apktool. Point it at a package on a device or a local APK, `.xapk`, `.apks`, or `.aab`, and it handles the rest:
@@ -108,7 +120,9 @@ When it detects cronet or an anti-tamper packer, it says so and routes you to th
 
 ## declaw-lab: proving the hard rungs on Linux
 
-Every rung past the first leans on the same thing: root, arm64, and the app's real BoringSSL in a real process. The standard x86_64 Android emulator gives you none of it cleanly. It cannot run arm-only builds, its ARM translation layer SIGSEGVs Frida's native hooks, and the hardware-breakpoint finder and mempatch stub are arm64-only by construction. So to test any of this honestly on an x86 Linux laptop, with no ARM hardware in the room, I needed a rooted arm64 Android I fully controlled. That is [declaw-lab](https://github.com/UncleJ4ck/declaw-lab): two backends, one `./lab` entrypoint, all on a Linux host.
+Every rung past the first leans on the same thing: root, arm64, and the app's real BoringSSL in a real process. The standard x86_64 Android emulator gives you none of it cleanly. It cannot run arm-only builds, its ARM translation layer SIGSEGVs Frida's native hooks, and the hardware-breakpoint finder and mempatch stub are arm64-only by construction. So to test any of this honestly on an x86 Linux laptop, with no ARM hardware in the room, I needed a rooted arm64 Android I fully controlled.
+
+A real rooted phone was not the clean answer either, and I spent a while learning that. On the phone I had, app traffic egresses over the cellular modem, on `rmnet`, not the USB link back to the host, so a transparent proxy on the laptop never saw a packet of it. `frida-server` also crashed on that device's kernel, the same Gum segfault from the top. Between the network path I could not see and the injection I could not run, the only way to get a clean, repeatable capture was an environment I owned end to end, from the CPU arch up to the route the traffic takes off the device. That is [declaw-lab](https://github.com/UncleJ4ck/declaw-lab): two backends, one `./lab` entrypoint, all on a Linux host.
 
 Standing it up was its own fight. There is no prebuilt multilib LineageOS image, so the first version tried to build one from source, which wants 64 GB of RAM and 400 GiB of disk and OOM-killed `soong` on a 31 GiB laptop because the module graph has to stay resident. The version that actually deploys is smaller: a pinned 1.1 GB `virtio_arm64only` prebuilt that fetches, verifies against a known hash, and gets rooted in place. The rig ships as a LineageOS `user` build that is hostile to headless root, so `provision` byte-patches the raw disk (AVB is `orange`, nothing verifies it): the `vendor_boot` cmdline gains `androidboot.selinux=permissive`, without which the gralloc path hits a `/dev/udmabuf` denial and SurfaceFlinger crash-loops before it ever boots, and `build.prop` gets `ro.debuggable=0 -> 1` and `ro.adb.secure=1 -> 0` so `adb root` runs and the device comes up authorized. One command later you have a rooted, permissive Android 16.
 
@@ -123,6 +137,10 @@ The **avd** backend is the fast lane: a rooted x86_64 Google emulator on KVM, fo
 The fix was one flag with a caveat I had to check by hand. `-writable-system` is why quick-boot was off in the first place, because a writable system image can invalidate the snapshot, and older emulators refused the combination. The current one does not. So the lab boots cold once, saves a rooted snapshot, and every later run restores it with `-no-snapshot-save`. The emulator loads that snapshot in a few seconds and the device comes back already root, instead of paying a full cold Android boot, and `-no-snapshot-save` never overwrites the snapshot, so each run still starts from the same clean state.
 
 Everything folds into one command. Point a backend at a patched APK and it boots the device, installs, redirects that app's 443 to a host MITM, and opens a scrcpy window, and because a declawed app accepts any cert there is no device CA to install, which is the whole point.
+
+![declaw-lab architecture: one lab entrypoint over two backends, feeding a patched app's TLS through a host MITM into Burp with no device CA]({{ '/assets/img/posts/declaw-lab-arch.png' | relative_url }})
+
+The no-device-CA part is the piece people expect to be there and it is not. Normally you install a proxy CA on the device and the app trusts it. Here the app trusts any cert because declaw already flipped that check, so the MITM can present whatever it likes and terminate the TLS. That is also the negative control baked into the lab: an unpatched app rejects the same cert, so if traffic shows up in Burp, the bypass is what put it there.
 
 ![the lab entrypoint, both backends behind one command on Linux]({{ '/assets/img/posts/declaw-lab-cli.png' | relative_url }})
 
