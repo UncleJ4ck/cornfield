@@ -590,8 +590,8 @@ a.sh-label {
 
   p {
     color: $text-sec;
-    line-height: 1.875;
-    margin-bottom: 1.25rem;
+    line-height: 1.9;
+    margin-bottom: 1.5rem;
   }
 
   strong { color: $text; font-weight: 700; }
@@ -807,7 +807,7 @@ a.sh-label {
 // header, prose, and code share one balanced column instead of the body text
 // hugging the left under a full-width header.
 .post {
-  max-width: 52rem;
+  max-width: 54rem;
   margin-inline: auto;
 }
 
