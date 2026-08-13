@@ -6,7 +6,7 @@ date: 2026-07-10
 tags: [http-request-smuggling, desync, sozu, transfer-encoding, fuzzing, regression, research]
 category: research
 published: false
-tldr: "I ran an evolutionary fuzzer at eight reverse proxies hunting an HTTP request smuggling desync and got nothing back. The reason was not that the proxies were safe. It was that I held the backend fixed at one strict parser, and a desync is a disagreement between two parsers. The moment I added a backend that disagrees, a request sozu had been forwarding all along became a working, unauthenticated Basic-auth bypass. It is a regression of a 2021 sozu issue that did not survive the rewrite onto the kawa parser, live on the latest release and on current main. This post is the whole thing: the clean sweep, the oracle that could not fail, the walls where the impact stopped, the twenty-backend honor matrix, and the fact that the trigger is not new."
+tldr: "I ran an evolutionary fuzzer at eight reverse proxies hunting an HTTP request smuggling desync and got nothing back. The reason was not that the proxies were safe. It was that I held the backend fixed at one strict parser, and a desync is a disagreement between two parsers. The moment I added a backend that disagrees, a request sozu had been forwarding all along became a working, unauthenticated Basic-auth bypass. It is a regression of a 2021 sozu issue that did not survive the rewrite onto the kawa parser. I reported it on 10 July 2026, and four days later they shipped the class-level fix in kawa 0.7.0. This post is the technique end to end: why an obfuscated Transfer-Encoding splits two parsers, the clean sweep, the oracle that could not fail, the twenty-backend honor matrix, the patch they wrote, and the fact that the trigger itself is not new."
 ---
 
 ## the thing that bugged me
@@ -142,7 +142,40 @@ if val.len() >= CHUNKED.len()
 
 It checks whether the last seven bytes equal `chunked`. No trailing-whitespace trim, no handling of a transfer-parameter like `chunked;a=b`, no check that chunked is the final coding in a list. When the check fails it keeps `Content-Length` and never strips the `Transfer-Encoding` it did not understand, so both go out. RFC 9112 section 6.1 says an intermediary must not forward both.
 
-And the reason nobody caught the regression: sozu's own smuggling test sends a well-formed `Transfer-Encoding: chunked`, which passes the suffix check and is handled correctly. The test never sends a malformed value, so the regression landed exactly in the blind spot of the test written to prevent it. I confirmed it on the latest tagged release, 2.1.0, and on current `main`, 2.1.1, over a plain HTTP frontend and a TLS-terminating one, since the parser runs after the TLS decrypt.
+The whole bug is visible in seven bytes of arithmetic. Take the header value, slice the last seven bytes, compare:
+
+| header value | len | last 7 bytes | suffix is `chunked`? | sozu frames by |
+|---|---|---|---|---|
+| `chunked` | 7 | `chunked` | yes | Transfer-Encoding, CL elided |
+| `chunked<TAB>` | 8 | `hunked<TAB>` | no | Content-Length, TE forwarded |
+| `chunked<SP>` | 8 | `hunked<SP>` | no | Content-Length, TE forwarded |
+| `chunked;a=b` | 11 | `ked;a=b` | no | Content-Length, TE forwarded |
+| `chunked, identity` | 17 | `dentity` | no | Content-Length, TE forwarded |
+
+Row one is the only row sozu's own regression test exercises, and it is the only row that behaves. Every other row is a request that leaves sozu carrying two framing headers.
+
+There is a second, funnier half. The same slice is wrong in the other direction:
+
+| header value | last 7 bytes | suffix is `chunked`? |
+|---|---|---|
+| `xchunked` | `chunked` | yes |
+| `notchunked` | `chunked` | yes |
+
+`xchunked` is the classic TE.CL obfuscation, and sozu's check reads it as chunked. I expected a second desync out of that and went to test it. I did not get one, and the reason is worth more than the result would have been:
+
+```
+sozu 2.1.0, does the smuggled /admin/secret reach the origin?
+  TE: 'chunked'              smuggled_reached_backend=False   <- well-formed, handled correctly
+  TE: 'chunked\t'            smuggled_reached_backend=True    <- the bug
+  TE: 'chunked '             smuggled_reached_backend=True    <- the bug
+  TE: 'xchunked'             smuggled_reached_backend=False
+  TE: 'notchunked'           smuggled_reached_backend=False
+  TE: 'identity'             smuggled_reached_backend=False   <- negative control
+```
+
+When the suffix matches, sozu commits to chunked and elides the `Content-Length`. It then de-chunks the body itself, hits the zero-length chunk, and treats everything after it as the next request on the client connection. Which it then parses, routes, and authenticates. The bytes I wanted to smuggle came back as an ordinary pipelined request wearing no disguise. A parser that is wrong in a way that makes it read *more* of your input is not exploitable in the same direction as one that is wrong in a way that makes it read *less*. Only the under-reading direction leaves bytes on the wire for someone else to frame.
+
+And the reason nobody caught the regression: sozu's own smuggling test sends a well-formed `Transfer-Encoding: chunked`, which passes the suffix check and is handled correctly. The test never sends a malformed value, so the regression landed exactly in the blind spot of the test written to prevent it. At the time of the report I confirmed it on the then-latest tagged release, 2.1.0, and on current `main`, 2.1.1, over a plain HTTP frontend and a TLS-terminating one, since the parser runs after the TLS decrypt. It is fixed now, in kawa 0.7.0 and sozu 2.2.0. The patch is at the end of this post.
 
 ---
 
@@ -268,7 +301,9 @@ One field note, because it is the kind of thing that never makes it into a clean
 
 ## reproduce it
 
-I kept the lab to three files so you do not have to trust my screenshots. It is the real thing: the official `clevercloud/sozu:latest` image, a two-frontend auth topology, and a Go origin that logs what it actually framed. Two commands and you watch a 401 turn into a 200.
+I kept the lab to three files so you do not have to trust my screenshots. It is the real thing: the official sozu image, a two-frontend auth topology, and a Go origin that logs what it actually framed. Two commands and you watch a 401 turn into a 200.
+
+One note now that the fix has shipped. The image is pinned to `clevercloud/sozu:2.1.0`, the release I reported against. If you swap it for `latest` you get 2.2.0 and the smuggled request never reaches the origin, which is the fastest way to watch the patch work.
 
 The topology, `docker-compose.yml`:
 
@@ -283,7 +318,7 @@ services:
     command: sh -c "cp /app/be_go.go /tmp/be_go.go && go run /tmp/be_go.go"
     networks: { net: { ipv4_address: 172.63.0.10 } }
   sozu:
-    image: clevercloud/sozu:latest
+    image: clevercloud/sozu:2.1.0   # vulnerable; 2.2.0 and later are fixed
     depends_on: [backend]
     ports: [ "127.0.0.1:9200:9200/tcp" ]
     volumes:
@@ -367,16 +402,57 @@ The backend log prints `REQ GET /admin/secret ... auth=""`. sozu framed one requ
 
 The fuzzer itself and the eight-stack HTTP/3 and HTTP/2 downgrade panel I started from are in the [Phage repo](https://github.com/UncleJ4ck/Phage). The sozu CL.TE lab above is the specific pair this post is about; the panel labs there are the general net I was dragging when I found it.
 
+## the patch
+
+I reported it privately on 10 July 2026 to `security@clever.cloud`, the address in their `.well-known/security.txt`, as a regression of #726. The ask was to fix it at the class, not the trigger. The defect is forwarding both `Content-Length` and `Transfer-Encoding` at all. Trim the tab and `chunked, identity` still slips through, and Werkzeug honors that one. The right fix is to reject or normalize whenever a `Transfer-Encoding` is present but does not resolve to a valid final `chunked`, never to fall back to `Content-Length` and forward a header you did not understand.
+
+Four days later, kawa [PR #19](https://github.com/CleverCloud/kawa/pull/19) landed and did exactly that. The four lines above became this:
+
+```rust
+/// Trims leading and trailing optional whitespace (OWS) as defined by
+/// RFC 9110 §5.6.3: space (0x20) and horizontal tab (0x09).
+fn trim_ows(mut data: &[u8]) -> &[u8] {
+    while let [b' ' | b'\t', rest @ ..] = data { data = rest; }
+    while let [rest @ .., b' ' | b'\t'] = data { data = rest; }
+    data
+}
+
+/// Returns true if the FINAL comma-separated transfer-coding token of a
+/// Transfer-Encoding header value is `chunked`, case-insensitively, once
+/// OWS has been trimmed from around the token (RFC 9112 §6.1).
+fn ends_with_chunked_coding(val: &[u8]) -> bool {
+    const CHUNKED: &[u8] = b"chunked";
+    let last_token = val.rsplit(|&b| b == b',').next().unwrap_or(val);
+    compare_no_case(trim_ows(last_token), CHUNKED)
+}
+```
+
+Both halves of the class are gone. `trim_ows` kills the tab and the trailing space. `ends_with_chunked_coding` splits on commas and checks the final token, which kills `chunked, identity`. And when a `Transfer-Encoding` is present but its final coding is not `chunked`, the parser now raises a parse error instead of quietly falling back to `Content-Length`, which is what RFC 9112 section 6.3 has been asking for the whole time. The comment they left in the source says it closes sozu-proxy/sozu#726.
+
+That is the correct fix, and it is a better outcome than a patch that only trimmed the tab.
+
 ## where it stands
 
-Reported privately to CleverCloud as a regression of #726, with the ask to fix it at the class, not the trigger. The defect is forwarding both `Content-Length` and `Transfer-Encoding` at all. Trim the tab and `chunked, identity` still slips through, and Werkzeug honors that one. The fix is to reject or normalize whenever a `Transfer-Encoding` is present but does not resolve to a valid final `chunked`, never to fall back to `Content-Length` and forward the header you did not understand.
+The timeline, plainly:
 
-No new technique. The trigger is from 2019, the bug is a regression of a 2021 report, and the method belongs to the two papers I cited up top. What was worth the week is smaller and more useful: a differential is only as strong as the diversity on both sides of it, one immune host makes every attacker look harmless, the honor matrix says the vulnerable unit is the parser and not the product, and the moment I added a host that disagrees, a request that had sat in my logs for days became an auth bypass. This post goes up after the fix.
+- **10 July 2026**, reported privately with a full write-up and a self-contained Docker reproduction.
+- **14 July**, three commits land in kawa PR #19 removing the suffix compare.
+- **15 July**, PR #19 merges, kawa 0.7.0 and 0.7.1 ship.
+- **16 July**, sozu 2.2.0 ships, pinned to `kawa ^0.7.1`. Its release notes call the change "HTTP/1 `Transfer-Encoding` smuggling hardening".
+
+If you run sozu, upgrade to 2.2.0. If you depend on kawa directly, upgrade to 0.7.0 or later. Everything before that carries the bug.
+
+I never got a reply to the email. At the time of writing there is no CVE and no advisory, and the kawa release notes present the change as an RFC-correctness fix, so anyone still on 0.6.x has no signal that they should upgrade for a smuggling bug. That gap is worth closing on its own, so I filed a [RustSec advisory](https://github.com/rustsec/advisory-db/pull/3142) for the crate, affected `< 0.7.0`, patched `0.7.0`. I am not going to speculate about why the mail went unanswered. The fix is good, it is out, and it landed fast.
+
+No new technique. The trigger is from 2019, the bug is a regression of a 2021 report, and the method belongs to the two papers I cited up top. What was worth the week is smaller and more useful: a differential is only as strong as the diversity on both sides of it, one immune host makes every attacker look harmless, the honor matrix says the vulnerable unit is the parser and not the product, and the moment I added a host that disagrees, a request that had sat in my logs for days became an auth bypass.
 
 ## references
 
 - [T-Reqs: HTTP Request Smuggling with Differential Fuzzing](https://dl.acm.org/doi/10.1145/3460120.3485384) (CCS 2021)
 - [The HTTP Garden](https://arxiv.org/abs/2405.17737) (2024)
 - [PortSwigger: HTTP request smuggling](https://portswigger.net/web-security/request-smuggling)
-- sozu-proxy/sozu issue #726 (2021)
-- RFC 9112 section 6.1 (Transfer-Encoding and Content-Length)
+- [sozu-proxy/sozu issue #726](https://github.com/sozu-proxy/sozu/issues/726) (2021, the original report this regressed from)
+- [kawa PR #19](https://github.com/CleverCloud/kawa/pull/19), the fix, and [PR #21](https://github.com/CleverCloud/kawa/pull/21), the follow-up on header-value OWS
+- [kawa 0.7.0](https://github.com/CleverCloud/kawa/releases/tag/v0.7.0) and sozu 2.2.0, the fixed releases
+- [RustSec advisory PR #3142](https://github.com/rustsec/advisory-db/pull/3142) for the kawa crate
+- RFC 9112 section 6.1 (chunked must be the final coding) and section 6.3 (reject when the framing cannot be determined), RFC 9110 section 5.6.3 (OWS)
