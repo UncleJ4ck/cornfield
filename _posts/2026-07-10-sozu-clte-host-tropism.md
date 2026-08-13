@@ -51,7 +51,7 @@ I did the homework before I wrote a word about methodology, because the worst ou
 - **T-Reqs** (Jabiyev et al., CCS 2021) is the grammar-based differential HTTP fuzzer. They generated mutated requests, ran ten server, proxy and CDN technologies in pairs, and found the pairs that disagree on message boundaries. Panel-pair differential fuzzing for HRS is theirs.
 - **The HTTP Garden** (2024) is the one that should have saved me a week. Its whole thesis, in the abstract, is that not all parsing-discrepancy vulnerabilities are visible from a gateway's output alone, so you have to examine how the origin interprets the bytes too. That is exactly the mistake I was about to make, written down and published two years before I made it.
 
-So the method here is not new, and what I did wrong is a re-derivation of the HTTP Garden's central point. The trigger I ended up with is older still. I am flagging both up front so the rest of the post keeps its credibility. The value is one specific, current, unpatched implementation bug, an honest walk to it, and one small thesis at the end. Not a technique.
+So the method here is not new, and what I did wrong is a re-derivation of the HTTP Garden's central point. The trigger I ended up with is older still. I am flagging both up front so the rest of the post keeps its credibility. The value is one specific implementation bug, since patched, an honest walk to it, and one small thesis at the end. Not a technique.
 
 The fuzzer is called Phage. The name carries the lesson, so let me use it.
 
@@ -112,7 +112,9 @@ Two framing headers on one request. sozu had added its own `Sozu-Id`, so this wa
               1 request                            2 requests
 ```
 
-My strict backend also framed by `Content-Length`, agreed with sozu, and the smuggle stayed invisible. A backend that honors the `Transfer-Encoding` would split it in two. I added one Go `net/http` backend to the panel and the whole thing lit up on the first request.
+My strict backend also framed by `Content-Length`, agreed with sozu, and the smuggle stayed invisible. A backend that honors the `Transfer-Encoding` would split it in two. So I added one Go `net/http` backend to the panel.
+
+The captured value did not fire. Go answers `chunked, identity` with a 501, which I only understood later when I built the matrix. What the log hit actually proved was the class, not the payload: sozu was willing to forward both framing headers on one request, and that is the whole precondition. The payload was a search problem after that, and it was a short search. Walking the obfuscations that sozu also fails to recognize, the two whitespace variants fire.
 
 ---
 
@@ -209,7 +211,7 @@ The run, verbatim, the controls first so the gate is real:
   RESULT: AUTH BYPASS REPRODUCED
 ```
 
-Drop the one `Transfer-Encoding` header and the whole thing collapses to two boring public requests. That negative control is the finding. The precondition rides with the severity and I will not bury it: this needs auth on one route while an attacker-reachable route shares the backend. Gate the whole frontend and the carrier itself needs auth, and the bypass dies. High, conditional on topology, not a flat high. CVSS 7.5, `AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:L`.
+Drop the one `Transfer-Encoding` header and the whole thing collapses to two boring public requests. That negative control is the finding. The precondition rides with the severity and I will not bury it: this needs auth on one route while an attacker-reachable route shares the backend. Gate the whole frontend and the carrier itself needs auth, and the bypass dies. High, conditional on topology, not a flat high. CVSS 7.5, `CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:L/A:N`. The `AC:H` is carrying the topology precondition and the `S:C` is the crossing of sozu's own auth boundary. Score the crate on its own, without the auth topology, and you land on a different vector for the same defect, which is the one I put in the RustSec advisory.
 
 Note the `xff="6.6.6.6"` on the smuggled line. sozu appends the real client IP to `X-Forwarded-For` on requests it parses. It never parsed this one, so the backend gets an attacker-chosen client IP, clean. Any XFF allowlist behind sozu is spoofable through the same door.
 
@@ -278,6 +280,27 @@ Look at the two uvicorn rows. Same server, same version. It smuggles under `--ht
 We track HTTP security by product and version. An advisory says it affects nginx 1.2 through 1.4. That granularity is wrong. The security boundary is the parser, and one product ships several. h11 and httptools are two Python packages doing the same job with opposite answers, and no advisory database has a column for which one you loaded. If you run an ASGI app, the honest answer to "am I exposed to this class" is not which server you run, it is which parser flag you passed, and most people cannot tell you.
 
 That is the part I would keep if the sozu bug got patched tomorrow. Audit parsers, not products.
+
+---
+
+## what Phage actually is
+
+I have been saying "the fuzzer" for two thousand words, so here is the thing itself. Phage started as a fork of CyberArk's QuicDrawH3 and turned into an evolutionary differential fuzzer for framing bugs.
+
+The core decision is that a test case is not a byte string. It is a **genome**: an ordered list of framing operations, `Headers`, `Data`, `Delay`, `Fin`, `Reset`, and the QUIC transport ops. Every op maps to one call on a real HTTP/1, HTTP/2 or HTTP/3 client, so a genome is always sendable by construction. You never waste a generation on something the client refuses to emit. Mutation operators, thirty-six of them now, edit the genome rather than the bytes: flip an `end_stream` flag, desync a declared `Content-Length` from the body actually sent, obfuscate a `Transfer-Encoding`, split a DATA frame, insert a `Delay` so a FIN lands late.
+
+Selection is MAP-Elites rather than a single fitness score. The archive is keyed by a behavior descriptor, roughly the shape of the request plus what the backend actually did with it, so the search keeps one elite per behavior cell instead of collapsing onto a single best. For a class like this, where the interesting region is a narrow ridge, keeping the weird-but-alive variants around matters more than optimizing one number.
+
+The oracle is the part I care about most, and this post is the story of getting it wrong. It is differential, it counts what the origin framed, and it carries a built-in negative control: the same genome with the trigger removed must come back clean, or the hit is discarded. Since this work I also split the tap signal from the impact signal, because "the proxy forwarded a body-length lie" and "a victim got hurt" are not the same claim, and only the second one is a vulnerability.
+
+Pointing it at a pair is one command against a lab:
+
+```
+python -m phage.evo --host 127.0.0.1 --port 9200 \
+    --echo-log logs/backend.jsonl --generations 200 --raw
+```
+
+`--raw` is the one that matters for this class. It hand-builds the frames instead of going through a conformant client, so a `Content-Length` that contradicts the body, or a header a polite client would refuse to send, actually reaches the wire. A saved hit replays with `--replay poc.json`.
 
 ---
 
