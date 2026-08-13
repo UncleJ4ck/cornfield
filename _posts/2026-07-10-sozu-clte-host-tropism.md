@@ -5,8 +5,8 @@ subtitle: "eight proxies came back clean because I had built the differential bl
 date: 2026-07-10
 tags: [http-request-smuggling, desync, sozu, transfer-encoding, fuzzing, regression, research]
 category: research
-published: false
-tldr: "I ran an evolutionary fuzzer at eight reverse proxies hunting an HTTP request smuggling desync and got nothing back. The reason was not that the proxies were safe. It was that I held the backend fixed at one strict parser, and a desync is a disagreement between two parsers. The moment I added a backend that disagrees, a request sozu had been forwarding all along became a working, unauthenticated Basic-auth bypass. It is a regression of a 2021 sozu issue that did not survive the rewrite onto the kawa parser. I reported it on 10 July 2026, and four days later they shipped the class-level fix in kawa 0.7.0. This post is the technique end to end: why an obfuscated Transfer-Encoding splits two parsers, the clean sweep, the oracle that could not fail, the twenty-backend honor matrix, the patch they wrote, and the fact that the trigger itself is not new."
+published: true
+tldr: "I ran an evolutionary fuzzer at eight reverse proxies hunting an HTTP request smuggling desync and got nothing back. The reason was not that the proxies were safe. It was that I held the backend fixed at one strict parser, and a desync is a disagreement between two parsers. The moment I added a backend that disagrees, a request sozu had been forwarding all along became a working, unauthenticated Basic-auth bypass. It is a regression of a 2021 sozu issue that did not survive the rewrite onto the kawa parser. I reported it on 10 July 2026, and four days later they shipped the class-level fix in kawa 0.7.0. This post is the technique end to end: why an obfuscated Transfer-Encoding splits two parsers, the clean sweep, the oracle that could not fail, the backend honor matrix, the patch they wrote, and the fact that the trigger itself is not new."
 ---
 
 ## the thing that bugged me
