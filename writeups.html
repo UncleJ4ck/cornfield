@@ -10,7 +10,19 @@ title: writeups
 
 {% assign machines = site.posts | where: "category", "writeups" | where: "kind", "machine" %}
 {% assign challenges = site.posts | where: "category", "writeups" | where: "kind", "challenge" %}
-{% assign other = site.posts | where: "category", "writeups" | where_exp: "p", "p.kind != 'machine' and p.kind != 'challenge'" %}
+{% assign fortresses = site.posts | where: "category", "writeups" | where: "kind", "fortress" %}
+{% assign other = site.posts | where: "category", "writeups" | where_exp: "p", "p.kind != 'machine' and p.kind != 'challenge' and p.kind != 'fortress'" %}
+
+{% if fortresses.size > 0 %}
+<section class="cat-section">
+  <div class="section-head">
+    <span class="sh-label">fortresses</span>
+    <span class="sh-line" aria-hidden="true"></span>
+    <span class="sh-count">{{ fortresses.size | prepend: '0' | slice: -2, 2 }}</span>
+  </div>
+  {% include postlist.html posts=fortresses %}
+</section>
+{% endif %}
 
 {% if machines.size > 0 %}
 <section class="cat-section">
