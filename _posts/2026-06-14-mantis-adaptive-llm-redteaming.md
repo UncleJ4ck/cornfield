@@ -950,6 +950,27 @@ None of this moved a break rate, and I have now said that three times because it
 
 ---
 
+## what the audit pass still owed: a judge scored against humans, and a reliability number
+
+The audit pass made the numbers reproducible. It did not pay two IOUs the post ran up earlier. The judge section argued the two-evaluator gate is the right shape without ever showing it agrees with a human. The run-that-contradicts section told you to never trust a single-run percentage and then did not hand you a better one. Both are paid now, and neither moved a break rate either, which is again the point.
+
+First, the judge, scored against labels I did not write. `judge_eval.py` runs the gate against JailbreakBench's 300 human-labeled (prompt, response) rows ([arXiv:2404.01318](https://arxiv.org/abs/2404.01318)) and scores each evaluator against the question it actually answers.
+
+```
+                     agreement    FPR      FNR
+  Mantis compliance    88.3%      6.3%    20.9%   <- lowest FPR in the table
+```
+
+Read the FPR and distrust a lone FNR. A judge can buy a low false-negative rate with a false-positive rate that fabricates breaks; Llama Guard's 9.0% FPR is paid for with a 60.9% FNR. The two-evaluator gate's whole job is to not cry wolf, and 6.3% is it not crying wolf, measured against humans rather than against itself. `jbb_loader.py` runs the full loop over the same behavior set, so a Mantis run sits next to other tools on a shared corpus instead of on my own.
+
+One honesty note belongs here, because the post keeps this rule everywhere else. The headline per-model numbers earlier are only as independent as the harm model grading them. If the harm gate is the same family as the target, a model can flatter its own family. Keep the harm role a different family (`--harm-model`), and re-grade a flagship number out-of-family before quoting it. That is not a new caveat, it is the same one the reliability section is built on, pointed at the grader instead of the attacker.
+
+Second, reliability, which is the direct answer to the run that contradicts. `--repeat N` runs each behavior N times and reports pass@k with the unbiased estimator ([arXiv:2107.03374](https://arxiv.org/abs/2107.03374)), not the tempting biased one, plus how many behaviors broke at least once rather than only the mean rate. A single run is one draw under one scorer; pass@k over repeats is the honest shape, and the "broke at least once" count is the number a red-teamer actually cares about. Two smaller levers came with it: `--only-strategy NAME` runs one strategy for a whole battery so its rate is measurable in isolation instead of inferred from a mixed run, and per-test ladder rotation offsets which strategies win the budgeted slots, so a battery samples across the library instead of drawing the same prefix on every test.
+
+None of this is a new attack or a higher number. It is the difference between a percentage I can defend and one I cannot.
+
+---
+
 ## why this shape, one more time
 
 The thing I will defend hardest is the loop. Static testing answers "does my prompt list work on this model," and that answer expires the moment the provider patches your phrasings. The loop answers "how does this model fail, and what does it take to get there," and that answer survives a patch. When a provider closes the exact wording you used, the corpus tool reports a regression to zero and learns nothing. The loop fingerprints the new refusal, routes to a different layer, and tells you whether the model got genuinely harder to break or just memorized your strings.
