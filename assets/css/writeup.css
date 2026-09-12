@@ -1,0 +1,73 @@
+/* 0xdf-style design for writeup posts (machine / challenge / fortress).
+   Loaded after main.css for category==writeups, scoped to .post so the rest of
+   the site keeps the house theme. Code theme, box-info card, and token colors
+   mirror 0xdf.gitlab.io (bg #22272e, green prompt #8AE234, HTB green #9fef00). */
+
+/* ---- box-info card ---- */
+.htb-box-info{display:flex;align-items:center;gap:1em;flex-wrap:wrap;
+  border:1px solid #1e2b1a;border-radius:10px;background:#0d130b;padding:1.1rem 1.25rem;margin:0 0 1.9rem}
+.htb-box-icon img,.htb-box-icon .ph{width:64px;height:64px;border-radius:8px;border:2px solid #9fef00;
+  box-shadow:0 0 15px rgba(159,239,0,.3);object-fit:contain;display:grid;place-items:center;
+  background:#0a0f08;color:#9fef00;font-weight:800;font-size:1.5rem}
+.htb-box-title{display:flex;flex-direction:column;gap:.15rem}
+.htb-box-name{font-size:1.7em;font-weight:800;color:#9fef00;text-decoration:none;text-shadow:0 0 10px rgba(159,239,0,.3)}
+.htb-box-subtitle{font-size:.85em;color:#a4b1cd;line-height:1.5}
+.htb-box-meta{display:flex;gap:.5rem;flex-wrap:wrap;margin-left:auto;align-items:center}
+.htb-difficulty-badge{padding:.35em .85em;border-radius:20px;font-weight:800;font-size:.74em;
+  text-transform:uppercase;letter-spacing:.5px;color:#fff}
+.diff-Easy{background:rgba(141,199,67,.2);color:#9fef00}
+.diff-Medium{background:rgba(255,184,0,.18);color:#ffb800}
+.diff-Hard{background:rgba(247,0,0,.18);color:#ff6b6b}
+.diff-Insane{background:rgba(255,0,0,.16);color:#e0e0e0;text-shadow:1px 1px 4px #f00}
+.htb-chip{padding:.3em .7em;border-radius:6px;background:#131a10;border:1px solid #22301c;
+  color:#a9b79c;font-size:.72em}
+.htb-chip b{color:#cfe0be}
+
+/* ---- table of contents ---- */
+.wu-toc{border:1px solid #1e2b1a;border-radius:8px;background:#0d130b;padding:.9rem 1.1rem;margin:1.6rem 0}
+.wu-toc .h{color:#8AE234;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;margin:0 0 .5rem}
+.wu-toc ol{margin:0;padding-left:1.2rem;color:#a9b79c}
+.wu-toc a{color:#cfe0be;text-decoration:none}
+.wu-toc a:hover{color:#9fef00}
+
+/* ---- code blocks (0xdf console theme) ---- */
+.post .prose div.highlight,.post .prose pre.highlight,.post .prose pre{
+  background:#22272e!important;border:1px solid #2d333b;border-radius:8px;color:#e6e6e6;
+  overflow-x:auto;scrollbar-color:#3c3a36 transparent}
+.post .prose pre,.post .prose div.highlight pre{padding:14px 16px;margin:0;font-size:.82rem;line-height:1.5}
+.post .prose div.highlight{margin:1rem 0}
+.post .prose :not(pre)>code{background:#22272e;color:#b8e08a;border:1px solid #2d333b;
+  border-radius:4px;padding:.08em .38em;font-size:.86em}
+/* Rouge tokens (console + bash/php/etc.) */
+.post .prose .highlight .gp{color:#8AE234}                 /* prompt */
+.post .prose .highlight .go{color:#e6e6e6}                 /* program output */
+.post .prose .highlight .gh{color:#8AE234;font-weight:700} /* generic heading */
+.post .prose .highlight .nt{color:#99f}
+.post .prose .highlight .nf,.post .prose .highlight .nb{color:#f2777a}
+.post .prose .highlight .k,.post .prose .highlight .kd,.post .prose .highlight .kn{color:#f97583}
+.post .prose .highlight .s,.post .prose .highlight .s1,.post .prose .highlight .s2,.post .prose .highlight .se{color:#96d0ff}
+.post .prose .highlight .c,.post .prose .highlight .c1,.post .prose .highlight .cm{color:#768390;font-style:italic}
+.post .prose .highlight .nv,.post .prose .highlight .vg,.post .prose .highlight .na{color:#79b8ff}
+.post .prose .highlight .mi,.post .prose .highlight .mf,.post .prose .highlight .m{color:#f8c555}
+.post .prose .highlight .o,.post .prose .highlight .ow{color:#e6e6e6}
+.post .prose .highlight .err{color:#3cc;background:unset}
+
+/* collapsible long output, 0xdf's code-collapse */
+.post .prose details.wu-collapse{margin:1rem 0}
+.post .prose details.wu-collapse>summary{cursor:pointer;color:#8AE234;font-size:.78rem;
+  background:#0d130b;border:1px solid #22301c;border-radius:6px;padding:.4rem .7rem;list-style:none}
+.post .prose details.wu-collapse[open]>summary{border-radius:6px 6px 0 0;border-bottom:0}
+
+/* ---- figures / screenshots ---- */
+.post .prose figure,.post .prose .wu-fig{margin:1.4rem 0;border:1px solid #2d333b;border-radius:8px;
+  overflow:hidden;background:#0d1522}
+.post .prose figure img,.post .prose .wu-fig img{display:block;width:100%;height:auto;border-bottom:1px solid #2d333b}
+.post .prose figcaption{padding:.55rem .85rem;color:#8b93a1;font-size:.77rem;line-height:1.55}
+.post .prose figcaption b{color:#8AE234}
+/* bare screenshots in markdown (![](...)) get a border + shadow like 0xdf */
+.post .prose p>img{border:1px solid #2d333b;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+
+/* ---- headings, 0xdf section feel ---- */
+.post .prose h2{border-bottom:1px solid #22301c;padding-bottom:.3rem;margin-top:2rem;color:#e2e8d8}
+.post .prose h3{color:#cfe0be;margin-top:1.6rem}
+.post .prose h3::before{content:"# ";color:#8AE234}

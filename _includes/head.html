@@ -30,6 +30,9 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}">
+  {%- if page.category == 'writeups' -%}
+  <link rel="stylesheet" href="{{ '/assets/css/writeup.css' | relative_url }}">
+  {%- endif -%}
   <link rel="canonical" href="{{ page.url | prepend: site.url }}">
   {%- feed_meta -%}
 </head>

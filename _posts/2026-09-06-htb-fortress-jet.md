@@ -6,18 +6,14 @@ date: 2026-09-06
 tags: [htb, fortress, pwn, heap, house-of-orange, rsa, wiener, sqli, rce, xor]
 category: writeups
 kind: fortress
+difficulty: Insane
+os: Linux
 tldr: "A locked fortress writeup. Paste any Jet flag and it unseals every checkpoint up to and including the one you own, decrypted in your browser with the flag as the key. Recon to two glibc-2.23 heap pwns, with an RSA Wiener detour. Screenshots and terminal captures throughout."
 ---
 
 <style>
 /* Jet fortress gate: leans on the house .prose styles; only the mechanism is bespoke.
    Restraint per DESIGN.md: flat surfaces, one accent, glow only as a faint text-shadow. */
-.jet-hero{border:1px solid #1e1f14;border-radius:4px;background:#14150e;padding:1.15rem 1.25rem;margin:0 0 1.75rem}
-.jet-hero .k{color:#767e22;font-size:.72rem;letter-spacing:.04em}
-.jet-hero .t{color:#e2ddcd;font-size:1.5rem;font-weight:800;margin:.15rem 0 .3rem;letter-spacing:.02em}
-.jet-hero .t b{color:#b3bd33}
-.jet-hero .m{color:#514f43;font-size:.78rem;line-height:1.7}
-.jet-hero .m span{color:#989484}
 .jet-gate{border:1px solid #2e3020;border-radius:4px;background:#14150e;padding:1.15rem 1.25rem;margin:1.9rem 0}
 .jet-gate h3{margin:0 0 .45rem;color:#e2ddcd;font-weight:700;font-size:1rem;border:0;padding:0}
 .jet-gate h3::before{content:"> ";color:#767e22;font-weight:400}
@@ -53,12 +49,6 @@ tldr: "A locked fortress writeup. Paste any Jet flag and it unseals every checkp
 .jet-kv td{border:0;padding:.18rem .6rem .18rem 0;color:#989484;vertical-align:top}
 .jet-kv td:first-child{color:#767e22;white-space:nowrap;width:1%}
 </style>
-
-<div class="jet-hero">
-  <div class="k">// hackthebox fortress</div>
-  <div class="t"><b>Jet</b></div>
-  <div class="m">11 checkpoints &middot; <span>10.13.37.10</span> &middot; web &rarr; www-data &rarr; alex, two 2017 heap binaries, one RSA detour</div>
-</div>
 
 <p><b>TL;DR.</b> Reverse DNS on the box names a vhost, obfuscated JS leaks the admin directory, error-based SQLi dumps the admin hash, and a <code>preg_replace /e</code> filter turns into RCE as www-data. From there a leaky SUID binary gives alex, repeating-key XOR unlocks a training archive, and the two binaries inside are glibc-2.23 heap challenges: House of Orange on 5555, a fastbin-to-one_gadget chain on 7777. A Wiener attack on a side RSA key rounds it out. Everything below the gate is AES-encrypted in this page. Paste any flag and it unseals every checkpoint up to the one you hold.</p>
 

@@ -23,6 +23,24 @@ layout: default
   </header>
 
   <div class="prose">
+    {%- if page.category == 'writeups' -%}
+    <div class="htb-box-info">
+      <div class="htb-box-icon">
+        {%- if page.boxicon -%}<img src="{{ page.boxicon }}" alt="">
+        {%- else -%}<span class="ph">{{ page.title | remove: "HTB:" | remove: "HTB Fortress:" | strip | slice: 0,1 | upcase }}</span>{%- endif -%}
+      </div>
+      <div class="htb-box-title">
+        <span class="htb-box-name">{{ page.title }}</span>
+        {%- if page.subtitle -%}<span class="htb-box-subtitle">{{ page.subtitle }}</span>{%- endif -%}
+      </div>
+      <div class="htb-box-meta">
+        {%- if page.difficulty -%}<span class="htb-difficulty-badge diff-{{ page.difficulty }}">{{ page.difficulty }}</span>{%- endif -%}
+        {%- if page.kind -%}<span class="htb-chip"><b>{{ page.kind }}</b></span>{%- endif -%}
+        {%- if page.os -%}<span class="htb-chip">{{ page.os }}</span>{%- elsif page.tags contains "linux" -%}<span class="htb-chip">Linux</span>{%- elsif page.tags contains "windows" -%}<span class="htb-chip">Windows</span>{%- endif -%}
+        <span class="htb-chip">{{ page.date | date: "%Y.%m.%d" }}</span>
+      </div>
+    </div>
+    {%- endif -%}
     {{ content }}
   </div>
 
