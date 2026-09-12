@@ -6,6 +6,8 @@ date: 2023-08-28
 tags: [htb, linux, git-dump, imagemagick, cve, cron]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "An exposed /.git dumped the source and a bundled ImageMagick 7.1.0-49. CVE-2022-44268 let me read arbitrary files through a crafted PNG, which leaked the SQLite DB and emily's password for SSH. A root cron ran binwalk 2.3.2 (CVE-2022-4510) on uploaded files for a root shell."
 ---
 

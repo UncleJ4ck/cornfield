@@ -6,6 +6,8 @@ date: 2023-02-02
 tags: [htb, linux, command-injection, sudo, privesc]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "A JS file pre-filled tech-support creds when a specific cookie was set, giving Basic auth to /printer. The filetype POST param had OS command injection for a shell as wizard. Root came from a sudo SETENV rule that let me prepend /tmp to PATH and hijack find and cd called by /opt/cleanup.sh."
 ---
 

@@ -6,6 +6,8 @@ date: 2023-07-14
 tags: [htb, linux, dns, lfi, ssh-mitm, sudo]
 category: writeups
 kind: machine
+difficulty: Hard
+os: Linux
 tldr: "A BIND zone transfer and a preg_replace path-traversal LFI gave me the rndc TSIG key. I used nsupdate to repoint mail.snoopy.htb at my box, caught a Mattermost reset token over a debug SMTP server, and reset sbrown. A /server_provision command triggered an outbound SSH that I MITM'd for cbrown creds. cbrown -> sbrown via sudo git apply of a crafted diff, sbrown -> root via sudo clamscan file read."
 ---
 

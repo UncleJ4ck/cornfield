@@ -6,6 +6,8 @@ date: 2023-09-03
 tags: [htb, linux, command-injection, info-disclosure, privesc]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "An exposed Spring Boot Actuator handed me a live admin JSESSIONID. The admin panel's /executessh endpoint dropped the username straight into a shell command, so ${IFS} past the whitespace filter gave a shell as app. Postgres creds from the application JAR let me dump and crack an admin bcrypt hash, which logged josh in over SSH. sudo /usr/bin/ssh with a ProxyCommand gave root."
 ---
 

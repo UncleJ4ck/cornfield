@@ -6,6 +6,7 @@ date: 2023-04-30
 tags: [htb, linux, lfi, command-injection, cypher-injection, pip]
 category: writeups
 kind: machine
+os: Linux
 tldr: "A weak path-traversal check on beta.only4you.htb leaks the app source. form.py runs dig with shell=True, so I inject through the email field for a shell as www-data. An internal neo4j is hit with Cypher injection to dump john's hash (ThisIs4You), and sudo pip3 download of an attacker-hosted sdist runs setup.py as root for the escape."
 ---
 

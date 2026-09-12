@@ -6,6 +6,8 @@ date: 2023-02-02
 tags: [htb, linux, file-upload, sudo, privilege-escalation]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "A hidden /nibbleblog directory runs NibbleBlog 4.0.3 with admin:nibbles. The My Image plugin lets me upload a PHP file with no checks for a reverse shell as nibbler. sudo -l shows a writable, root-run monitor.sh, so I append a shell and run it for root."
 ---
 

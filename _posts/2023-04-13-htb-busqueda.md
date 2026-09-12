@@ -6,6 +6,8 @@ date: 2023-04-13
 tags: [htb, linux, rce, command-injection, privesc]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "searcher.htb ran a Flask wrapper over Searchor 2.4.0, which builds an eval() string from user input. A crafted query gave RCE as svc. A leaked .git config held cody's password, reused for the svc SSH account. A root sudo script (system-checkup.py) called full-checkup.sh by relative path, so dropping a malicious one in my own dir and running the sudo command gave root. A docker-inspect side path leaked the Gitea admin password to read the script source."
 ---
 

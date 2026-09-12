@@ -6,6 +6,8 @@ date: 2023-02-02
 tags: [htb, linux, getsimple-cms, cve-2019-11231, gtfobins]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "GetSimple CMS 3.3.15 stores its users as flat XML, and /data/users/admin.xml was served with no auth. The PWD field is an unsalted SHA-1 that is the digest of the word admin, so the creds were admin:admin. From the dashboard I used the authenticated theme-edit RCE (CVE-2019-11231) to drop a PHP reverse shell as www-data, which could run /usr/bin/php under sudo NOPASSWD, a one-line GTFOBins root."
 ---
 

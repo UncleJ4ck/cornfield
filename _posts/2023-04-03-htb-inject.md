@@ -6,6 +6,8 @@ date: 2023-04-03
 tags: [htb, linux, spring, cve-2022-22963, ansible]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "A path traversal in an image endpoint leaked the app source and pom.xml, which pinned spring-cloud-function-web 3.2.2. That version is vulnerable to CVE-2022-22963, a SpEL injection in the routing expression header, which gave a shell as the app user. A maven settings.xml leaked phil's password for lateral movement, and a root-run ansible-playbook over a writable tasks directory gave root."
 ---
 

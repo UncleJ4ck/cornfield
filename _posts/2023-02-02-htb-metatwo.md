@@ -6,6 +6,8 @@ date: 2023-02-02
 tags: [htb, linux, wordpress, sqli, xxe]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "An unauthenticated SQL injection in the BookingPress WordPress plugin (CVE-2022-0739) dumps password hashes and I crack the manager. An authenticated Media Library XXE (CVE-2021-29447) reads wp-config.php for the FTP password, which leads to send_email.php and jnelson's SSH creds. Root comes from a passpie GPG store cracked with gpg2john."
 ---
 

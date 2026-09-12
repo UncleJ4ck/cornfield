@@ -6,6 +6,8 @@ date: 2023-06-11
 tags: [htb, linux, grafana, postgresql, jupyter, sudo]
 category: writeups
 kind: machine
+difficulty: Medium
+os: Linux
 tldr: "A kiosk subdomain ran Grafana 9.5.2, whose query endpoint let me run raw SQL against Postgres. COPY FROM PROGRAM gave a shell as postgres. From there a world-writable shadow simulation config run by a cron got me juno, a leaked Jupyter Notebook token got me jovian, and a sudo sattrack binary that reads /tmp/config.json let me write root's authorized_keys."
 ---
 

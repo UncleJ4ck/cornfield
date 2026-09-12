@@ -6,6 +6,8 @@ date: 2023-08-26
 tags: [htb, linux, xss, nosql-injection, command-injection]
 category: writeups
 kind: machine
+difficulty: Medium
+os: Linux
 tldr: "Stored XSS in contact.php fires an XHR against an internal staff panel, which lets me hit auth.php and brute tristan's password through MongoDB NoSQL injection. SSH in, chisel to the internal vhost, command injection in inspect.php gets www-data, a leaked .git config gives matthew, and stracing his kpcli session captures the KeePass master password for root."
 ---
 

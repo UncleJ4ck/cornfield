@@ -6,6 +6,8 @@ date: 2023-06-19
 tags: [htb, linux, lfi, latex-injection, cron, privesc]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "A LaTeX equation renderer let me read arbitrary files with lstinputlisting. I pulled the dev vhost's htpasswd hash, cracked it with john, and logged in over SSH. Root came from a cron that ran every .plt file in a world-writable /opt/gnuplot as root, so a gnuplot system call set the SUID bit on bash."
 ---
 

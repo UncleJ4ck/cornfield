@@ -6,6 +6,8 @@ date: 2023-05-15
 tags: [htb, linux, lfi, ssrf, privesc, format-string]
 category: writeups
 kind: machine
+difficulty: Medium
+os: Linux
 tldr: "Gitea on 3000 handed me the full source. An admin edit handler had a path traversal that leaked the nginx config, exposing a regex proxy_pass that forwards to a Redis unix socket. I abused that SSRF to HSET a pro flag, then wrote a PHP webshell through the same traversal into a directory where PHP executes. Redis held cooper's reused password for SSH. A sudo license tool format-strings an attacker-controlled Redis field, leaking the root secret through __globals__."
 ---
 

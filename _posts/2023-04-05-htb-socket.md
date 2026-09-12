@@ -6,6 +6,8 @@ date: 2023-04-05
 tags: [htb, linux, websocket-sqli, password-reuse, pyinstaller]
 category: writeups
 kind: machine
+difficulty: Medium
+os: Linux
 tldr: "The QReader app on ws.qreader.htb:5789 ran a Python websockets server with a blind SQL injection over SQLite, dumping admin:denjanjade122566. That password was reused for tkeller over SSH. Root came from a sudo build-installer.sh that runs pyinstaller on an attacker-supplied .spec file, which executes arbitrary Python as root."
 ---
 

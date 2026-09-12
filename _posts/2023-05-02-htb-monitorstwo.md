@@ -6,6 +6,7 @@ date: 2023-05-02
 tags: [htb, linux, cacti, rce, docker, container-escape]
 category: writeups
 kind: machine
+os: Linux
 tldr: "Cacti is vulnerable to unauthenticated RCE via remote_agent.php (CVE-2022-46169), landing www-data inside a Docker container. The container config.php has database creds, I crack marcus's bcrypt to funkymonkey and SSH in. Host root comes from CVE-2021-41091: lax overlay2 permissions let me run a SUID bash planted from inside the container."
 ---
 

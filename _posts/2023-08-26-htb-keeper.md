@@ -6,6 +6,8 @@ date: 2023-08-26
 tags: [htb, linux, request-tracker, keepass, cve-2023-32784]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "A ticketing subdomain ran Request Tracker with default root:password. A ticket exposed lnorgaard's password, which was reused for SSH. Her home held a KeePass database and a memory dump, and CVE-2023-32784 recovered the master password from the dump. The database stored root's PuTTY private key, which converted to an OpenSSH key for a root login."
 ---
 

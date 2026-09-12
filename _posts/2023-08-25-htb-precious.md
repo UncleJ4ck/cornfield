@@ -6,6 +6,8 @@ date: 2023-08-25
 tags: [htb, linux, command-injection, ruby, deserialization, cve]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "A Ruby url-to-PDF app used pdfkit 0.8.6, leaking the version in the PDF metadata. CVE-2022-25765 gave command injection through the url param for a shell as henry. Plaintext bundle creds were reused, and a root-run Ruby script doing unsafe YAML.load (CVE-2022-32224) deserialized a gadget chain to root."
 ---
 

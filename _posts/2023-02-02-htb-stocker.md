@@ -6,6 +6,8 @@ date: 2023-02-02
 tags: [htb, linux, nosql-injection, xss, lfi, privesc]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "An Express/Mongo dev vhost fell to a NoSQL auth bypass that reached the order API. The order title got rendered into a generated PDF, so an iframe pointed at a local file read index.js and leaked the Mongo dbURI password. That password was reused for SSH, and a sudo grant on node with a wildcard path let me traverse out and run my own script as root."
 ---
 

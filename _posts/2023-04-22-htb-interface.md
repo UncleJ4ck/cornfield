@@ -6,6 +6,8 @@ date: 2023-04-22
 tags: [htb, linux, dompdf, cve-2022-28368, exiftool]
 category: writeups
 kind: machine
+difficulty: Medium
+os: Linux
 tldr: "A CSP header leaked an internal API subdomain hosting an html2pdf endpoint backed by dompdf. CVE-2022-28368 abuses dompdf's font caching to write a PHP file into the web-accessible fonts directory, which gave a shell as www-data. A root cron ran bash arithmetic over a PDF Producer tag, so injecting a command substitution with exiftool got code execution as root via a SUID bash."
 ---
 

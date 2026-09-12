@@ -6,6 +6,8 @@ date: 2023-08-29
 tags: [htb, linux, file-upload, sudo, privilege-escalation]
 category: writeups
 kind: machine
+difficulty: Medium
+os: Linux
 tldr: "An upload form 7z-extracted a PDF from a zip. A zip symlink gave arbitrary file read of the upload handler's source, which showed the extension check was just a pathinfo() comparison. A filename like x.phpg.pdf bypassed it and dropped a runnable .php webshell as rektsu. Root came from a NOPASSWD sudo binary that dlopen's a .so from my home config, so a malicious library with a constructor ran as root."
 ---
 

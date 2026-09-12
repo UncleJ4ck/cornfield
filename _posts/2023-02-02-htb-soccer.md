@@ -6,6 +6,8 @@ date: 2023-02-02
 tags: [htb, linux, default-creds, websocket-sqli, doas]
 category: writeups
 kind: machine
+difficulty: Easy
+os: Linux
 tldr: "Tiny File Manager 2.4.3 at /tiny had default admin creds, which let me upload a webshell for a www-data shell. A vhost soc-player.soccer.htb spoke to a WebSocket on 9091 that was blind-SQL-injectable, dumping player:PlayerOftheMatch2022 for SSH. Root came from a doas rule allowing dstat as root plus a writable plugin directory."
 ---
 

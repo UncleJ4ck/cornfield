@@ -6,6 +6,8 @@ date: 2023-07-16
 tags: [htb, linux, ssti, cargo, firejail, privesc]
 category: writeups
 kind: machine
+difficulty: Medium
+os: Linux
 tldr: "ssa.htb verified submitted PGP keys, and the key UID was rendered through Jinja2, giving SSTI and RCE inside a firejail sandbox. A leaked httpie session handed me silentobserver over SSH. A root cron built a writable Rust crate as atlas, so I backdoored the logger crate, then used a firejail SUID exploit for root."
 ---
 {% raw %}
