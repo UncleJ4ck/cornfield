@@ -8,7 +8,6 @@ category: writeups
 kind: fortress
 difficulty: Insane
 os: Linux
-tldr: "A locked fortress writeup. Paste any Jet flag and it unseals every checkpoint up to and including the one you own, decrypted in your browser with the flag as the key. Recon to two glibc-2.23 heap pwns, with an RSA Wiener detour. Screenshots and terminal captures throughout."
 ---
 
 <style>
@@ -45,44 +44,6 @@ tldr: "A locked fortress writeup. Paste any Jet flag and it unseals every checkp
 .jet-kv td{border:0;padding:.18rem .6rem .18rem 0;color:#989484;vertical-align:top}
 .jet-kv td:first-child{color:#767e22;white-space:nowrap;width:1%}
 </style>
-
-
-<div class="jet-sub">box info</div>
-<table class="jet-kv">
-<tr><td>target</td><td>10.13.37.10 (fortress, fixed IP)</td></tr>
-<tr><td>os</td><td>Ubuntu 16.04, kernel 4.4.0-116 (a second host on 2222 is 20.04)</td></tr>
-<tr><td>entry</td><td>DNS &rarr; vhost &rarr; JS &rarr; SQLi &rarr; preg_replace /e RCE</td></tr>
-<tr><td>users</td><td>www-data, alex, membermanager (1006), memo (1007), tony</td></tr>
-<tr><td>hardest</td><td>Memo (7777): fastbin poison to one_gadget over a live socket, ASLR-fragile</td></tr>
-</table>
-
-<div class="jet-sub">the surface</div>
-
-| port | service | what it gates |
-|---|---|---|
-| 53 | BIND 9.10.3 | reverse DNS names the real vhost, and the zone transfers |
-| 80 | nginx 1.10.3 | obfuscated JS, error-based SQLi, `/e` RCE |
-| 5555 | membermanager | House of Orange heap pwn (glibc 2.23) |
-| 7777 | memo | fastbin + one_gadget heap pwn (glibc 2.23) |
-| 9201 | fake ES | data-leak checkpoint (custom, not real Elasticsearch) |
-
-<div class="jet-note"><b>One infra trap worth the warning.</b> The named vhost took requests and returned nothing over ~1200 bytes. Not a WAF, not a crash: a path-MTU black hole on the VPN tunnel. DF pings pin the real MTU near 1330, a Range request proves the cliff (401 bytes back, 1201 hangs). Lowering tun0 MTU to 1300 clears it. If large HTTP responses vanish on a fortress, suspect the transport before the app. The full proof is in the first checkpoint below.</div>
-
-<p style="color:#767e22;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;margin:1.6rem 0 .4rem">// the chain, end to end</p>
-
-```mermaid
-flowchart TD
-  A[nginx default: HTML comment] --> B[DNS reverse + AXFR: www.securewebinc.jet]
-  B --> C[secure.js fromCharCode: admin dir]
-  C --> D[error-based SQLi: admin hash]
-  D --> E[preg_replace /e RCE: www-data]
-  E --> F[leak SUID ret2shellcode: alex]
-  E --> G[XOR crypter: key securewebincrocks]
-  G --> H[zip: membermanager + memo]
-  H --> I[5555 House of Orange: membermanager]
-  H --> J[7777 fastbin + one_gadget: memo]
-  F --> K[tony RSA Wiener: secret.enc]
-```
 
 
 <div class="jet-gate">
