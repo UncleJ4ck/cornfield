@@ -10,16 +10,10 @@ layout: default
         <span class="tag">{{ tag }}</span>
       {%- endfor -%}
     </div>
+    {%- unless page.category == 'writeups' -%}
     <h1 class="post-title">{{ page.title }}</h1>
     {%- if page.subtitle -%}
       <p class="post-subtitle">{{ page.subtitle }}</p>
-    {%- endif -%}
-    {%- if page.category == 'writeups' -%}
-      <div class="htb-meta">
-        {%- if page.difficulty -%}<span class="htb-badge diff-{{ page.difficulty | replace: ' ', '' }}">{{ page.difficulty }}</span>{%- endif -%}
-        {%- if page.kind -%}<span class="htb-badge htb-kind">{{ page.kind }}</span>{%- endif -%}
-        {%- if page.os -%}<span class="htb-badge htb-os">{{ page.os }}</span>{%- elsif page.tags contains "linux" -%}<span class="htb-badge htb-os">Linux</span>{%- elsif page.tags contains "windows" -%}<span class="htb-badge htb-os">Windows</span>{%- endif -%}
-      </div>
     {%- endif -%}
     {%- if page.tldr -%}
       <div class="tldr" role="note">
@@ -27,9 +21,30 @@ layout: default
         <p>{{ page.tldr }}</p>
       </div>
     {%- endif -%}
+    {%- endunless -%}
   </header>
 
   <div class="prose">
+    {%- if page.category == 'writeups' -%}
+    <div class="htb-box-info">
+      <div class="htb-box-icon"><span class="ph">{{ page.title | remove: "HTB:" | remove: "HTB Fortress:" | strip | slice: 0,1 | upcase }}</span></div>
+      <div class="htb-box-title">
+        <h1 class="htb-box-name">{{ page.title }}</h1>
+        {%- if page.subtitle -%}<span class="htb-box-subtitle">{{ page.subtitle }}</span>{%- endif -%}
+      </div>
+      <div class="htb-box-meta">
+        {%- if page.difficulty -%}<span class="htb-badge diff-{{ page.difficulty | replace: ' ', '' }}">{{ page.difficulty }}</span>{%- endif -%}
+        {%- if page.kind -%}<span class="htb-badge htb-kind">{{ page.kind }}</span>{%- endif -%}
+        {%- if page.os -%}<span class="htb-badge htb-os">{{ page.os }}</span>{%- elsif page.tags contains "linux" -%}<span class="htb-badge htb-os">Linux</span>{%- elsif page.tags contains "windows" -%}<span class="htb-badge htb-os">Windows</span>{%- endif -%}
+      </div>
+    </div>
+    {%- if page.tldr -%}
+      <div class="tldr" role="note">
+        <span class="tldr-label" aria-hidden="true">tl;dr</span>
+        <p>{{ page.tldr }}</p>
+      </div>
+    {%- endif -%}
+    {%- endif -%}
     {{ content }}
   </div>
 
