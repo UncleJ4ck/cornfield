@@ -40,7 +40,7 @@
 .post .prose :not(pre)>code{background:#22272e;color:#b8e08a;border:1px solid #2d333b;
   border-radius:4px;padding:.08em .38em;font-size:.86em}
 /* Rouge tokens (console + bash/php/etc.) */
-.post .prose .highlight .gp{color:#8AE234}                 /* prompt */
+.post .prose .highlight .gp,.post .prose pre .gp{color:#8AE234;font-weight:600} /* prompt */
 .post .prose .highlight .go{color:#e6e6e6}                 /* program output */
 .post .prose .highlight .gh{color:#8AE234;font-weight:700} /* generic heading */
 .post .prose .highlight .nt{color:#99f}
