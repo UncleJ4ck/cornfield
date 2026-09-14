@@ -22,9 +22,9 @@ First I fingerprinted the blob. `file firmware.bin` and a quick `binwalk firmwar
 From the root of that tree I grepped recursively across every file for any login reference:
 
 ```bash
-binwalk -e firmware.bin
-cd _firmware.bin.extracted/squashfs-root
-grep -rn -e "login" ./
+$ binwalk -e firmware.bin
+$ cd _firmware.bin.extracted/squashfs-root
+$ grep -rn -e "login" ./
 ```
 
 That turned up the telnet startup line, inside the device's init script `etc/scripts/telnetd.sh`:
@@ -36,7 +36,7 @@ telnetd -l "/usr/sbin/login" -u Device_Admin:$sign
 So the device starts `telnetd` with a fixed user `Device_Admin`, and the password is whatever `$sign` resolves to. The `-l` flag points the daemon at `/usr/sbin/login` as the login program and `-u user:pass` hardcodes the credential pair. `$sign` was not inline; it was a variable the script reads from a config file elsewhere in the tree. A `find` for that file name located it:
 
 ```bash
-find . -type f -name sign
+$ find . -type f -name sign
 ```
 
 That pointed at `squashfs-root/etc/config/sign`, which held the actual password value:
@@ -52,7 +52,7 @@ So the full credential pair baked into the image was `Device_Admin` / `qS6-X/n]u
 A quick `nc <host> <port>` confirmed the service on the wire was a real telnet login prompt rather than a raw text banner, so it expected the protocol's option negotiation, not just a typed password into a dumb socket. I switched to a real telnet client so the negotiation was handled and the prompt behaved:
 
 ```bash
-telnet <host> <port>
+$ telnet <host> <port>
 ```
 
 It asked for a username and password. I gave the pair from the script and the config file, `Device_Admin` and `qS6-X/n]u>fVfAt!`. The login dropped me onto the device, and `flag.txt` was right there in the landing directory.

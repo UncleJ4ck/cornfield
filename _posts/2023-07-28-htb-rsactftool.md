@@ -112,7 +112,7 @@ b'HTB{...}'
 The challenge is named after `RsaCtfTool`, and the tool would have solved it without any of this. Its prime-power attack detects `n = p^k`, recovers `p`, and reconstructs the private key directly:
 
 ```bash
-RsaCtfTool.py --publickey pubkey.pem --uncipherfile key
+$ RsaCtfTool.py --publickey pubkey.pem --uncipherfile key
 ```
 
 ## the flag

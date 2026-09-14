@@ -89,7 +89,7 @@ Running it dumped the reconstructed display history, `1290` characters. Reading 
 The flag characters are the lone non-asterisk bytes that appear right after each `Enter Password` redraw: `H`, `T`, `B`, `{`, `8`, `4`, `d`, `_`, `d`, `3`, `5`, `1`, `9`, `n`, ... in order. To pull just those out, I chained the script through `sed` to delete the three UI strings (the asterisks, the `Enter Password` prompt, and the access message) and `tr` to strip the spaces, leaving only the leaked characters concatenated:
 
 ```bash
-python3 csv_to_data.py data.csv | sed 's/*//g' | sed 's/Enter Password//g' | sed 's/ACCESS GRANDED SYSTEM DISARMED//g' | tr -d ' '
+$ python3 csv_to_data.py data.csv | sed 's/*//g' | sed 's/Enter Password//g' | sed 's/ACCESS GRANDED SYSTEM DISARMED//g' | tr -d ' '
 ```
 
 That printed the flag on a single line, the PIN that the keypad had typed onto its own LCD over an I2C bus with no protection at all:
