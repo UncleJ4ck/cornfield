@@ -36,3 +36,31 @@
 
 /* ---- shell prompt inside a plain <pre> (fortress tiers) ---- */
 .post .prose pre .gp{color:#b3bd33;font-weight:600}
+
+/* ---- fortress gate + tiers, shared by jet and synacktiv (one theme) ---- */
+.ft-gate{border:1px solid #2e3020;border-radius:4px;background:#14150e;padding:1.15rem 1.25rem;margin:1.9rem 0}
+.ft-gate h3{margin:0 0 .45rem;color:#e2ddcd;font-weight:700;font-size:1rem;border:0;padding:0}
+.ft-gate h3::before{content:"> ";color:#767e22;font-weight:400}
+.ft-lead{margin:.2rem 0 0;color:#989484;font-size:.82rem;line-height:1.7}
+.ft-lead code{color:#b3bd33}
+.ft-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.95rem}
+.ft-row input{flex:1;min-width:230px;padding:.6rem .75rem;border-radius:3px;border:1px solid #2e3020;background:#0b0c07;color:#e2ddcd;font-family:inherit;font-size:.85rem}
+.ft-row input:focus{outline:none;border-color:#767e22}
+.ft-row button{padding:.6rem 1.2rem;border-radius:3px;border:1px solid #767e22;background:rgba(179,189,51,.07);color:#ccd45c;cursor:pointer;font-weight:700;font-family:inherit;font-size:.85rem;transition:background 150ms}
+.ft-row button:hover{background:rgba(179,189,51,.14)}
+.ft-status{margin-top:.65rem;font-size:.8rem;min-height:1.1em;color:#847f6e}
+.ft-ok{color:#ccd45c!important;text-shadow:0 0 12px rgba(179,189,51,.35)}
+.ft-bad{color:#c86a4a!important}
+.ft-prog{display:flex;gap:.25rem;margin-top:.85rem;flex-wrap:wrap}
+.ft-pip{width:20px;height:5px;border-radius:2px;background:#0b0c07;border:1px solid #2e3020;transition:background 150ms,border-color 150ms}
+.ft-pip.on{background:#767e22;border-color:#b3bd33}
+.ft-locked{color:#847f6e;font-size:.8rem;margin:1.5rem 0 0;border-top:1px dashed #1e1f14;padding-top:.85rem}
+.ft-locked::before{content:"[ sealed ] ";color:#767e22}
+.post .prose .ft-tier{border-top:1px solid #1e1f14;margin-top:2.25rem;padding-top:.3rem}
+.post .prose .ft-tier:first-child{border-top:0;margin-top:.5rem}
+.ft-sub{color:#767e22;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;margin:1.4rem 0 .3rem}
+.ft-flag{margin:1.4rem 0 .3rem;padding:.5rem .75rem;border:1px dashed #767e22;border-radius:3px;color:#ccd45c;font-family:inherit;font-size:.82rem;background:#0e0f09;word-break:break-all}
+.ft-flag::before{content:"flag  ";color:#847f6e}
+.ft-note{background:#14150e;border:1px solid #1e1f14;border-left:3px solid #b3bd33;border-radius:0 4px 4px 0;padding:.8rem 1rem;margin:1.6rem 0;color:#989484;font-size:.82rem;line-height:1.7}
+.ft-note b{color:#e2ddcd}
+.ft-fin{margin-top:1.4rem;color:#ccd45c;font-style:italic}
