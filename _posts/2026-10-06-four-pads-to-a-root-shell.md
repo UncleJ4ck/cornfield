@@ -256,6 +256,19 @@ SquashFS 4.0, xz-compressed, 798 inodes, 128 KB blocks, and a superblock timesta
 
 SquashFS is a compressed read-only filesystem, which is exactly what you want in flash: the running rootfs is immutable, and everything writable lives in tmpfs under `/var`. That design choice is itself a finding, because it tells you where secrets at runtime will be: not in the firmware image, but in `/var`.
 
+The whole extraction, from the shell to a mountable image, with the dead end kept in:
+
+```mermaid
+flowchart LR
+  SH["root shell"] --> MTD["cat /proc/mtd<br/>mtd2 = rootfs, 0x630000"]
+  MTD --> BLK["/dev/mtdblock2"]
+  BLK --> C1["dd piped to curl POST"]
+  C1 -.->|failed| X["no file"]
+  BLK --> C2["tftp -p -l /dev/mtdblock2"]
+  C2 -->|worked| IMG["6,488,064-byte firmware.bin"]
+  IMG --> SQ["mount -t squashfs"]
+```
+
 ## Act 4: what the firmware held
 
 Two things in the filesystem are worth a careful look.
@@ -554,6 +567,22 @@ Disproving your own finding feels like losing. It is the opposite. The earlier c
 
 One port-field is not the whole box. The device runs roughly two dozen network daemons, and the honest thing to do before writing "no remote code execution" is to check the ones that take unauthenticated input: `upnpd` and its `libupnp`, `tddp`, and `httpd`. I decompiled all of them with Ghidra and asked each the same two questions. Can attacker bytes reach a command? Can they smash a stack?
 
+Here is the whole sweep and where each daemon landed:
+
+```mermaid
+flowchart TD
+  ATK["unauthenticated attacker<br/>on the LAN"] --> U["upnpd 1900 SOAP"]
+  ATK --> LU["libupnp SSDP"]
+  ATK --> T["tddp UDP 1040"]
+  ATK --> H["httpd port 80"]
+  ATK --> W["wscd WPS"]
+  U --> Uv["5-byte iptables injection<br/>bounded, not weaponizable"]
+  LU --> LUv["no exec imports<br/>SSDP copies bounded"]
+  T --> Tv["execve wrapper is dead code<br/>v2 overflow bounded + password-gated"]
+  H --> Hv["one popen, fixed ifconfig ra0"]
+  W --> Wv["CVE-2012-5958 present in libupnp 1.3.1<br/>reachability unproven"]
+```
+
 **Every command sink, enumerated.** The whole exec surface across the daemons is small once you look for every family and not just `system`. `upnpd` has one exec helper fed by the iptables rules we already walked, and nothing else command-shaped in the binary. `httpd` has exactly one `popen` in the entire file, and it runs `ifconfig ra0` on a fixed interface name, not request input. The interesting one is `tddp`, the TP-Link debug daemon on UDP 1040, because its lineage is the 2019 SR20 bug where a filename from the packet was handed to a shell. On this C50 `tddp` really does carry a shell wrapper, `tddp_execCmd`, which `vsprintf`s a string and runs it as `sh -c` through `execve("/bin/sh", ...)`:
 
 ```text
@@ -567,6 +596,18 @@ fork();  // child:
 It is a loaded gun. It has no callers. Not one, direct or through a pointer. The only live `system()` in `tddp` runs a fixed `"ated_tp &"` to enter RF-test mode, with no attacker string in it. So the gun sits in the binary, unwired. Worth saying out loud, because a `system`-only cross-reference walks straight past an `execve` wrapper, and if a future firmware ever connects a packet handler to that function it becomes an unauthenticated root shell on day one.
 
 **The memory-safety pass came back the same way: defended, not absent.** `tddp`'s version-2 parser does have the classic shape, a 32-bit length pulled straight from the packet and used as a copy size. But the copy is bounded (the length is checked against the buffer before the copy runs) and it only happens after an HMAC-MD5 digest over the admin password. Bounded and authenticated. TP-Link got both right here, which the old SR20 and C1200 TDDP overflows did not. `libupnp` imports no `system`, `popen`, or `exec` at all, so no SSDP datagram can spawn a command through it, and its one `strcpy` lives outside the packet path. The one stack `strcpy` in `upnpd` copies a fixed interface name from the config, not the wire. After all of that, no reachable unauthenticated overflow.
+
+The TDDP case is worth a picture, because it is the difference between a bug and a defended path. The dangerous copy is real, but two gates stand in front of it:
+
+```mermaid
+flowchart TD
+  P["TDDP v2 packet<br/>32-bit length field"] --> C{"len under the buffer size ?"}
+  C -->|no| DROP["copy skipped, decode error"]
+  C -->|yes| DES["DES decrypt, bounded"]
+  DES --> MD5{"HMAC-MD5 over<br/>adminName + adminPwd ?"}
+  MD5 -->|fail| REJ["rejected, nothing processed"]
+  MD5 -->|pass| PROC["command handled<br/>needs the admin password"]
+```
 
 **I ran the whole thing through Ghidra a second time on purpose,** to check that `r2` had not quietly misled me. It agreed on every mechanism. It settled one thing `r2` had left open, the `NewRemoteHost` field, which turns out to be fetched from the request and then never stored in the mapping node or passed to the command builder, only logged and freed, so it is not an injection point. And it caught the dead `execve` wrapper my first `system`-only pass had missed. Two decompilers, no contradictions, and the one that reads messier functions more cleanly earned its keep.
 
