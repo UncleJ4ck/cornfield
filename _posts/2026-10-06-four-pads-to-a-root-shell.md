@@ -128,6 +128,18 @@ turn off flow control over.
 
 `tddp task start` is worth flagging now, because it comes back later: TDDP is the TP-Link Device Debug Protocol, a UDP service that has historically carried command-injection bugs on other models. Seeing it start in the boot log is a lead, not a finding. I will get to why that distinction matters.
 
+The whole path from cold metal to a root prompt, in one picture:
+
+```mermaid
+flowchart LR
+  PWR["power on"] --> UB["U-Boot 1.1.3<br/>Ralink 4.3.0.0"]
+  UB --> K["Linux 2.6.36 kernel"]
+  K --> COS["cos init<br/>VLAN / switch / tddp / dropbear"]
+  COS --> LOGIN["Archer A5 login:"]
+  LOGIN --> AUTH["admin + default password"]
+  AUTH --> SH["root shell on ttyS1"]
+```
+
 Then the login. This is the A5, photographed off the monitor. I am transcribing it rather than embedding the screen photo, because terminal text belongs in a code block where you can read and copy it, not in a JPEG:
 
 ```text
@@ -437,6 +449,29 @@ flowchart TD
 
 Five bytes of attacker-influenced text reaching a shell formatter is worth testing for real, so I needed the service running.
 
+**The firmware does try to start it.** This is not a dead service sitting in the image. `libcmm.so` reads the `UPnPCfg/Enable` byte and, when it is set, formats and runs the launch line itself:
+
+```text
+[0x00008e3e0]> pd @ 0x8e408            # libcmm.so, the UPnP launcher
+0x0008e404   addiu a1, zero, 0x200
+0x0008e408   addiu a2, a2, ...          ; "upnpd -L %s -W %s -en %d -P %s -nat %d -port %d ..."
+0x0008e414   addiu a3, a3, 0x4540       ; "br0"  ->  the -L interface
+0x0008e420   lw    t9, -sym.imp.system(gp)
+0x0008e428   jalr  t9                    ; system("upnpd -L br0 ... -en 1 ...")
+```
+
+The shipped default `UPnPCfg/Enable=1` feeds a `system()` that runs `upnpd` bound to `br0`, the LAN bridge. On paper the daemon is unauthenticated and LAN-reachable out of the box:
+
+```mermaid
+flowchart LR
+  CFG["default_config.xml<br/>UPnPCfg/Enable = 1"] --> COS["cos / libcmm<br/>rsl_initUPnPObj"]
+  COS --> FMT["snprintf @ 0x8e408<br/>upnpd -L br0 -en 1 ..."]
+  FMT --> SYS["system() @ 0x8e428"]
+  SYS --> UP["upnpd on br0<br/>SSDP 1900 + SOAP"]
+```
+
+That is exactly why I could not leave the port-field effect as a paper claim. The next step was to make a real daemon start and fire the request at it.
+
 **Then the part nobody writes down: getting it to run at all.** FirmAE is not a button. The checkout from my old notes was gone, so I cloned it fresh (commit `653565b`), built its Docker image, stood up a loopback-only Postgres 13 for its database, loaded the `loop` module under `pkexec`, ran a privileged host-networked container against the read-only vendor image, and hand-created the loop partition device after FirmAE's own discovery. That is all emulator plumbing, no firmware edits, and it is the real reason "I emulated it" is three words hiding most of an evening.
 
 **And then the stock boot would not start the service.** This is the crux I have to be straight about. FirmAE extracted the image, built the disk, and ran init, but `upnpd` never came up: the run result was `false`, the process table had no `upnpd`, `/proc/net/tcp` and `/proc/net/udp` held no listeners, and TCP/1900 refused the connection. The serial console scrolled one line without end, `swRegRead: Operation not supported`. I traced that string back into `libcmm.so`:
@@ -492,7 +527,17 @@ And here is the part I made myself write down. **Both SOAP requests returned HTT
 0x00405a70   beqz  v0, 0x405ad8        ;   not all digits -> Invalid Args
 ```
 
-`fcn.00405710` computes `strlen` and `strspn` over the field and returns whether they match. The port field's charset is `1234567890`, pure decimal, so `1;>a` (with its `;` and `>`) fails the span, `v0` comes back zero, and the handler jumps to Invalid Args before `atoi` ever runs. Its `tp_system` also screens metacharacters with `strpbrk` at `0x40c7f8`. The sibling is fixed, which is a reason not to generalize the C50 result. Second, I walked the IPv4 SSDP M-SEARCH path through `libupnp.so`, the other unauthenticated way into this code, and found no overflow or command route in the receive, parser, struct-copy, and reply sites I visited. Neither cross-check found a new bug, and both are written down precisely because a negative you went looking for is worth more than a positive you assumed.
+`fcn.00405710` computes `strlen` and `strspn` over the field and returns whether they match. The port field's charset is `1234567890`, pure decimal, so `1;>a` (with its `;` and `>`) fails the span, `v0` comes back zero, and the handler jumps to Invalid Args before `atoi` ever runs. Its `tp_system` also screens metacharacters with `strpbrk` at `0x40c7f8`. The sibling is fixed, which is a reason not to generalize the C50 result. Second, I walked the IPv4 SSDP M-SEARCH path through `libupnp.so`, the other unauthenticated way into this code. The fastest way to bound that search is to ask what the library can even do:
+
+```text
+[0x...]> ii~system,popen,exec,fork     # exec-family imports in libupnp.so
+(no results)
+[0x...]> pd 4 @ 0xe494                  # the ONLY strcpy call in the library
+0x0000e494   lw    v0, -sym.imp.strcpy(gp)
+0x0000e4a0   jalr  t9                    ; strcpy(), inside UpnpResolveURL, not the datagram path
+```
+
+`libupnp.so` imports no `system`, `popen`, `exec`, or `fork` at all, so no SSDP datagram can spawn a command through this library, full stop. The `recvfrom` that reads the packet caps it at `0x9c3` bytes, and the single `strcpy` lives in `UpnpResolveURL` (URL resolution), away from the M-SEARCH receive path. I still walked the receive, parser, struct-copy, and reply sites for a memory-corruption route and found none in what I visited, but the import list already rules out the scarier class. Neither cross-check found a new bug, and both are written down precisely because a negative you went looking for is worth more than a positive you assumed.
 
 So what do I actually have? A **bounded file-creation effect**: an empty file, created by a daemon I had to start by hand, in an emulator that could not boot that daemon on its own, and never shown to be reachable on a real router. The shipped config does enable UPnP (`UPnPCfg/Enable=1`), but "enabled in the config" and "started, bound, and reachable on a shipped unit" are different claims, and I could only reach the first.
 
