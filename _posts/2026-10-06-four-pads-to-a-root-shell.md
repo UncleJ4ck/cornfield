@@ -328,17 +328,107 @@ A sink is not a vulnerability until a reachable caller lets a remote input contr
 
 Years after the dump I came back to the C50, and this phase was mostly reverse engineering, not emulation. I opened the current `250117` binaries in Ghidra and `r2` and worked through a list of hypotheses, including my own old one, trying to kill each. That order matters. The emulator came last, as a way to test the one lead that survived the disassembly, not as the thing that found it. The honest account of this phase is a list of things I tried to make work and mostly could not.
 
-**Lead one, my own old RCE, refuted at the instruction level.** The earlier write-up with my name on it claimed an unauthenticated command execution in `upnpd`: a SOAP `AddPortMapping` whose `NewProtocol` field was concatenated into a shell command. Reading `GateDeviceAddPortMapping` into `pmlist_NewNode`, that field is copied only when `strlen < 4` (`upnpd 0x409cec`); anything longer branches away and a NUL byte lands in the node at `0x409d4c`. The long `TCP; ...` payload the whole claim rested on is blanked before it reaches the firewall command. The advisory was wrong about its own mechanism, in the shipped binary.
+```mermaid
+flowchart TD
+  S["4 leads on C50 250117"] --> L1["NewProtocol RCE<br/>(my old advisory)"]
+  S --> L2["diagnostics Host<br/>Ping / TraceRoute"]
+  S --> L3["httpd updateString<br/>unbounded copy"]
+  S --> L4["NewInternalPort<br/>port field"]
+  L1 --> R1["refuted: blanked to NUL<br/>at 4+ bytes"]
+  L2 --> R2["refuted: allowlist<br/>rejects metachars"]
+  L3 --> R3["refuted: every caller<br/>passes a fixed length"]
+  L4 --> E["survived the disassembly"]
+  E --> EM["emulate to test"]
+  EM --> B["bounded file-creation effect<br/>only with daemon hand-started"]
+  B --> W["claim withdrawn"]
+```
+
+The rest of this section walks each branch, with the actual `r2` output that settled it.
+
+**Lead one, my own old RCE, refuted at the instruction level.** The earlier write-up with my name on it claimed an unauthenticated command execution in `upnpd`: a SOAP `AddPortMapping` whose `NewProtocol` field was concatenated into a shell command. So I read `pmlist_NewNode` in `r2`, where that field is handled:
+
+```text
+[0x00409088]> pd 10 @ 0x409cd0        # pmlist_NewNode: the NewProtocol field
+0x00409cd0   lw    a0, (arg_3ch)         ; a0 = the NewProtocol string
+0x00409ce0   jalr  t9                    ; strlen(NewProtocol)
+0x00409cec   sltiu v0, v0, 4             ; v0 = (len < 4) ? 1 : 0
+0x00409cf0   beqz  v0, 0x409d30          ; len >= 4  ->  the blanking path
+            ...
+0x00409d3c   lui   v1, 0x41
+0x00409d40   addiu v1, v1, 0x84c         ; v1 = 0x41084c
+0x00409d44   lbu   v1, (v1)              ; load ONE byte from 0x41084c
+0x00409d4c   sb    v1, (v0)              ; store it into node+0x24
+[0x00409088]> px 4 @ 0x41084c
+0x0041084c  0000 0000                     ....
+```
+
+The field is copied with `strcpy` only when `strlen < 4`. Anything longer takes the branch at `0x409cf0` into a path that writes a single byte, loaded from `0x41084c`, into the node. That byte is `00`. So a `NewProtocol` of four bytes or more is replaced by one NUL, an empty string, before it ever reaches the firewall command. The long `TCP; ...` payload the whole claim rested on could never survive this function. The advisory was wrong about its own mechanism, in the shipped binary.
 
 **Lead two, the diagnostics shell, refuted the same way.** The authenticated Ping and TraceRoute pages feed a `Host` into `oal_startPing` and `oal_startTraceRoute`, which really do call `util_execSystem`. That looks like command injection. It is not: the setters in `libcmm.so` allow only letters, digits, `-` and `.`, and reject everything else before building the command (the Ping reject branch sits at `0x6f838`, TraceRoute at `0x70028`). A metacharacter never reaches the shell on that path.
 
 Lead three was the `httpd` `updateString` copy from the previous section, and it died the same honest death: dangerous shape, every caller in this build passing a fixed length.
 
-**The one survivor.** The port fields of the same `AddPortMapping` handler take a different route. `NewInternalPort` passes an `atoi` range check, then its original string is kept if `strlen < 6` (`0x409bec`, `0x409c6c`) and formatted into the DNAT rule `... --to %s:%s` (template at `0x41099c`) that is handed to `system()` through the wrapper at `0x40970c`. Five bytes of attacker-influenced text reaching a shell formatter is worth testing for real, so I needed the service running.
+**The one survivor.** The port fields of the same handler take a different route. `NewInternalPort` passes an `atoi` range check, and then the same `pmlist_NewNode` keeps its original string under a different, looser limit:
+
+```text
+[0x00409088]> pd 6 @ 0x409bd0         # same function, the port field
+0x00409bdc   jalr  t9                    ; strlen(NewInternalPort)
+0x00409bec   sltiu v0, v0, 6             ; v0 = (len < 6)  -- note: 6, not 4
+0x00409bf0   beqz  v0, 0x409c30
+0x00409c00   addiu v1, v0, 0x18          ; kept: strcpy into node+0x18
+[0x00409088]> px 56 @ 0x41099c          # the DNAT command template
+0x0041099c  %s -t nat -A %s -d %s -p %s --dport %s -j DNAT --to %s:%s
+[0x00409088]> pdc @ 0x40970c            # the exec helper, 36 callers
+    v0 = [sym.imp.system]
+    call t9                               ; system(cmd)
+    ... "system fork failed.\ncmd:%s\n"
+```
+
+So the port field keeps up to five bytes, those bytes are formatted into an `iptables ... -j DNAT --to %s:%s` line, and that line is handed to `system()` through the wrapper at `0x40970c` (which calls `sym.imp.system` and, on failure, prints `system fork failed`). Nothing blanks it the way `NewProtocol` is blanked. That asymmetry is the whole finding, and it is easier to see as a picture than as prose:
+
+```mermaid
+flowchart TD
+  REQ["SOAP AddPortMapping<br/>unauthenticated, on the LAN"] --> H["GateDeviceAddPortMapping<br/>-> pmlist_NewNode"]
+  H --> NP["NewProtocol"]
+  H --> IP["NewInternalPort"]
+  NP --> NPc{"len under 4 bytes?"}
+  NPc -->|no| BLANK["NUL from 0x41084c<br/>field becomes empty"]
+  BLANK -.->|dead end| DEAD["never reaches the shell"]
+  IP --> IPc{"len under 6 bytes?"}
+  IPc -->|yes| KEEP["kept into node+0x18"]
+  KEEP --> FMT["iptables ... --to %s:%s<br/>@ 0x41099c"]
+  FMT --> SYS["system() wrapper<br/>@ 0x40970c"]
+```
+
+Five bytes of attacker-influenced text reaching a shell formatter is worth testing for real, so I needed the service running.
 
 **Then the part nobody writes down: getting it to run at all.** FirmAE is not a button. The checkout from my old notes was gone, so I cloned it fresh (commit `653565b`), built its Docker image, stood up a loopback-only Postgres 13 for its database, loaded the `loop` module under `pkexec`, ran a privileged host-networked container against the read-only vendor image, and hand-created the loop partition device after FirmAE's own discovery. That is all emulator plumbing, no firmware edits, and it is the real reason "I emulated it" is three words hiding most of an evening.
 
-**And then the stock boot would not start the service.** This is the crux I have to be straight about. FirmAE extracted the image, built the disk, and ran init, but `upnpd` never came up: the run result was `false`, the process table had no `upnpd`, `/proc/net/tcp` and `/proc/net/udp` held no listeners, and TCP/1900 refused the connection. The serial console scrolled one line without end, `swRegRead: Operation not supported`. Root cause: the vendor init brings up the MediaTek switch through a register read issued as ioctl `0x89f1` on `eth0` (the `swRegRead` wrapper in `libcmm.so` at `0xae088`); QEMU has no such switch, the ioctl returns -1, and the VLAN and switch bring-up stalls before the service chain ever reaches a bind. A positive-controlled search of FirmAE's own sources found no `0x89f1` handler, so this is the emulator missing vendor silicon, not a mistake in my config.
+**And then the stock boot would not start the service.** This is the crux I have to be straight about. FirmAE extracted the image, built the disk, and ran init, but `upnpd` never came up: the run result was `false`, the process table had no `upnpd`, `/proc/net/tcp` and `/proc/net/udp` held no listeners, and TCP/1900 refused the connection. The serial console scrolled one line without end, `swRegRead: Operation not supported`. I traced that string back into `libcmm.so`:
+
+```text
+[0x000ae088]> pd 12 @ 0xae0bc          # libcmm.so: swRegRead
+0x000ae0bc   lw    t9, -sym.imp.ioctl(gp)
+0x000ae0c4   addiu v0, v0, 0x4578        ; "eth0"
+0x000ae0f0   jalr  t9                     ; ioctl(fd, 0x89f1, &ifr)
+0x000ae0fc   bne   v0, s0, 0xae120        ; s0 = -1; on success -> store the reg
+0x000ae108   lw    t9, -sym.imp.perror(gp)
+0x000ae110   jalr  t9                     ; perror("swRegRead")
+```
+
+`0x89f1` sits in the `SIOCDEVPRIVATE` ioctl range, a device-private call for the MediaTek switch. QEMU has no such switch, so `ioctl` returns -1, the branch at `0xae0fc` is not taken, `perror` prints `swRegRead: Operation not supported`, and the VLAN and switch bring-up loops on that line instead of finishing. The service chain never reaches a bind, which is exactly why stock FirmAE shows no `upnpd` and a refused TCP/1900. A positive-controlled search of FirmAE's own sources found no `0x89f1` handler, so this is the emulator missing vendor silicon, not a mistake in my config.
+
+```mermaid
+flowchart TD
+  BOOT["FirmAE boots the image"] --> COS["cos init<br/>VLAN / switch setup"]
+  COS --> IOCTL["swRegRead: ioctl eth0, 0x89f1"]
+  IOCTL --> FAIL["QEMU has no switch<br/>ioctl = -1, ENOTSUP"]
+  FAIL --> STALL["perror swRegRead loops<br/>bring-up never finishes"]
+  STALL --> NOBIND["upnpd never starts<br/>TCP/1900 refused"]
+  MAN["manual boot: init=preInit.sh"] --> SH["guest shell"]
+  SH --> START["start upnpd by hand<br/>with the real launcher args"]
+  START --> SERVE["serves /gatedesc.xml<br/>accepts AddPortMapping"]
+```
 
 **So I switched it on by hand.** A second, diagnostic boot through `init=/firmadyne/preInit.sh` dropped me to a shell inside the guest. I ran `rcS`, removed the duplicate address FirmAE had left on `eth0.3`, and started the unmodified `/usr/bin/upnpd` manually with the exact arguments the real launcher uses. Only now did it serve `/gatedesc.xml` and accept quoted `AddPortMapping` actions, and only now could I run the real test, with a **negative control** beside the payload, the single technique that separates a finding from a hope. Same request, same daemon, two inputs:
 
