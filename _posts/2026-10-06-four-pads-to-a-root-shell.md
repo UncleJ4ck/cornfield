@@ -8,6 +8,8 @@ category: research
 tldr: "Across two sibling TP-Link Archer routers I measured an unlabelled four-pad serial header with a multimeter, reached a root console over UART, dumped the firmware over TFTP, found the web-panel password stored at rest, triaged the MIPS service binaries, and then, years later, used firmware emulation to disprove my own earlier remote-RCE claim. No CVE. The interesting part is everywhere the evidence stopped me from claiming more than I could prove."
 ---
 
+This is a writeup I have been meaning to publish for years. I opened this router back in 2022, filled a notebook and a camera roll, and then life moved on before I ever wrote it up. The notes and photos sat in a folder. The 2026 revisit is what finally gave me the excuse to finish it, so what follows is old research closed out at last, not a fresh hunt.
+
 There is no CVE at the end of this post. I want to say that in the first line, because the usual shape of a hardware-hacking writeup is a ramp toward one dramatic bug, and this is not that. This is the longer and more honest shape: a multi-year poke at two cheap routers that taught me more about *verification* than about TP-Link. The best tool on the bench was a multimeter, the most useful result was a negative one, and the climax is me deleting an advisory I had written with my own name on it.
 
 If that sounds like an anticlimax, stay anyway. Every step here is reproducible, and I will explain the mechanism behind each one, not just the keystrokes.
