@@ -45,7 +45,7 @@ Here is the subject. An unremarkable white box that sat routing packets for year
 
 Open it up and the whole board is a single green PCB, which is most of the design:
 
-![The opened Archer A5 board: the MediaTek MT7628 SoC at centre, ESMT DDR RAM to its left, two U&T ethernet magnetics, the 5 GHz radio, and the LED light-pipes with their silkscreen labels (Power, 2.4G, 5G, LAN, Internet, WPS) along the bottom; the production barcode on the shield is blacked out]({{ '/assets/img/posts/archer-board-overview.jpg' | relative_url }})
+![The opened Archer A5 board, red boxes on the MediaTek MT7628 SoC (right) and the ESMT DDR RAM (left); also visible are two U&T ethernet magnetics, the 5 GHz radio, and the LED light-pipes with their silkscreen labels (Power, 2.4G, 5G, LAN, Internet, WPS) along the bottom, with the production barcode on the shield blacked out]({{ '/assets/img/posts/archer-board-overview.jpg' | relative_url }})
 
 The large square chip in the centre is the MediaTek **MT7628** SoC, the whole router on one die: CPU, switch, and 2.4 GHz radio. To its left is the ESMT DDR chip (the 64 MB of RAM the boot log counted), the two black `U&T UTH20T29` blocks are the ethernet port magnetics, and the separate chip toward the bottom right is the 5 GHz radio. Along the bottom edge, the green light-pipes carry the front-panel LEDs, with the board helpfully silk-screened `Power 2.4G 5G LAN Internet WPS`. The white wire you can see tacked to a pad near the centre is one leg of the serial connection.
 
@@ -184,7 +184,7 @@ What I did **not** demonstrate: an unauthenticated login, or any network path to
 
 With a root shell on the C50, the goal became a firmware image I could analyze offline. The whole firmware lives in one eight-pin SOIC package, `U4` on the underside of the board, sitting right next to the three wires (ground, TX, RX) I tacked onto the serial header. The package markings are consistent with EON's cFEON flash line, which is a nice physical confirmation of the JEDEC ID `1C 70 17` the bootloader printed: the chip in my hand and the byte the ROM read agree on EON, 8 MiB.
 
-![Underside of the router PCB showing the eight-pin SOIC SPI flash chip labelled U4 and three wires soldered to the serial header pads]({{ '/assets/img/posts/archer-flash-underside.jpg' | relative_url }})
+![Underside of the router PCB, red boxes on the eight-pin SOIC SPI flash chip labelled U4 (top) and the three wires soldered to the serial header pads (bottom)]({{ '/assets/img/posts/archer-flash-underside.jpg' | relative_url }})
 
 There are two ways to read that chip. You can desolder it, or clip onto it in-circuit, and read it directly with an SPI programmer (a CH341A and `flashrom`), which needs no shell at all and is the right move when the device will not give you a console. Or, if you already have a root shell, you can let the running Linux read its own flash for you, which is what I did. On a Linux-based router the flash is exposed as Memory Technology Device partitions. The map lives in `/proc/mtd`:
 
