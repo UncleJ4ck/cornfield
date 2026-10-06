@@ -322,7 +322,23 @@ undefined4 updateString(void *param_1, void *param_2, size_t param_3)
 
 The root cause pattern, stated plainly: `updateString` copies `param_3` bytes from source to destination and the function itself never knows how large the destination is. It null-checks the two pointers and nothing else. If any caller passes a destination buffer smaller than an attacker-influenced `param_3`, this is a straight overflow into whatever follows that buffer, on a target with no canary and no NX. That is a classic sink.
 
-A sink is not a vulnerability until a reachable caller lets a remote input control both the source and the length, into a buffer that is actually too small. So instead of stopping at the sink, I traced its callers. In this build `updateString` has five call sites (`0x410bec`, `0x4124d8`, `0x412550`, `0x412568`, `0x412a94`), and every one of them passes a hard-coded length of `0x21` bytes, inside internal GDPR-related code, with no request-controlled length anywhere near them. The dangerous shape is real; the dangerous call is not present in this firmware. Writing "unbounded `memcpy` in `httpd`, therefore RCE" would have been exactly the move this whole post argues against. It stays a sink worth re-checking in other versions, not a bug in this one.
+A sink is not a vulnerability until a reachable caller lets a remote input control both the source and the length, into a buffer that is actually too small. So instead of stopping at the sink, I asked `r2` who calls it, and what length each caller passes:
+
+```text
+[0x00400e98]> axt @ sym.updateString     # every caller
+0x00410bec  bal sym.updateString
+0x004124d8  jal sym.updateString
+0x00412550  jal sym.updateString
+0x00412568  jal sym.updateString
+0x00412a94  jal sym.updateString
+[0x00400e98]> pd 4 @ 0x410bdc             # one caller, just before the call
+0x00410bdc   lw    a1, 0x84(s1)
+0x00410be4   addiu a2, zero, 0x21          ; length = 0x21, a hard constant
+0x00410be8   addiu a0, a1, 0xf0            ; destination
+0x00410bec   bal   sym.updateString
+```
+
+Five call sites, and each one sets `a2` to a literal `0x21` (33 bytes) in its delay slot, inside internal GDPR-related code, with no request-controlled length anywhere near them. The dangerous shape is real; the dangerous call is not present in this firmware. Writing "unbounded `memcpy` in `httpd`, therefore RCE" would have been exactly the move this whole post argues against. It stays a sink worth re-checking in other versions, not a bug in this one.
 
 ## Act 6: the reckoning, or how I disproved my own exploit
 
@@ -364,7 +380,26 @@ The rest of this section walks each branch, with the actual `r2` output that set
 
 The field is copied with `strcpy` only when `strlen < 4`. Anything longer takes the branch at `0x409cf0` into a path that writes a single byte, loaded from `0x41084c`, into the node. That byte is `00`. So a `NewProtocol` of four bytes or more is replaced by one NUL, an empty string, before it ever reaches the firewall command. The long `TCP; ...` payload the whole claim rested on could never survive this function. The advisory was wrong about its own mechanism, in the shipped binary.
 
-**Lead two, the diagnostics shell, refuted the same way.** The authenticated Ping and TraceRoute pages feed a `Host` into `oal_startPing` and `oal_startTraceRoute`, which really do call `util_execSystem`. That looks like command injection. It is not: the setters in `libcmm.so` allow only letters, digits, `-` and `.`, and reject everything else before building the command (the Ping reject branch sits at `0x6f838`, TraceRoute at `0x70028`). A metacharacter never reaches the shell on that path.
+**Lead two, the diagnostics shell, refuted the same way.** The authenticated Ping and TraceRoute pages feed a `Host` into `oal_startPing` and `oal_startTraceRoute`, which really do call `util_execSystem`. That looks like command injection. So I read the Host validator in `libcmm.so`, `rsl_setIppingDiagObj`, one character at a time:
+
+```text
+0x0006f7d4   addiu a0, v1, -0x30
+0x0006f7dc   sltiu a0, a0, 0xa         ; is it '0'..'9' ?
+0x0006f7e0   bnez  a0, 0x6f818         ;   yes -> accept, next char
+0x0006f7e4   addiu a0, v1, -0x61
+0x0006f7ec   sltiu a0, a0, 0x1a        ; is it 'a'..'z' ?
+0x0006f7f0   bnez  a0, 0x6f818
+0x0006f7f4   addiu a0, v1, -0x41
+0x0006f7fc   sltiu a0, a0, 0x1a        ; is it 'A'..'Z' ?
+0x0006f800   bnez  a0, 0x6f818
+0x0006f804   addiu v1, v1, -0x2d
+0x0006f80c   sltiu v1, v1, 2           ; is it '-' or '.' ?
+0x0006f810   beqz  v1, 0x6f838         ;   anything else -> reject
+            ...
+0x0006f85c   addiu s1, zero, 0x232f    ; "Invalid Host Name", return 0x232f
+```
+
+The allowlist is exactly `[0-9A-Za-z.-]`. A `;`, a space, a backtick, a `$`, none of them survive to `util_execSystem`, they all hit the reject at `0x6f838`. The TraceRoute setter `rsl_setTracerouteDiagObj` runs the byte-for-byte same loop and rejects at `0x70028`. A metacharacter never reaches the shell on that path.
 
 Lead three was the `httpd` `updateString` copy from the previous section, and it died the same honest death: dangerous shape, every caller in this build passing a fixed length.
 
@@ -448,7 +483,16 @@ The field is annotated: the leading `1` satisfies the `atoi` port check, the `;`
 
 And here is the part I made myself write down. **Both SOAP requests returned HTTP 200.** If I had used the HTTP response as my oracle, I would have "confirmed" the bug on the benign request too, because the response does not change. The only thing that distinguishes the payload is the file it creates and the `/bin/sh -c` lines in the instrumented trace. The response is not the evidence. The sink is.
 
-**Before trusting any of that, two cross-checks, both negative.** First, is the newer hardware even affected? I pulled the current Archer C20 v6 build (`260811`, the same `upnpd` family) and read its handler: it added a decimal-only guard, `strlen == strspn(input, "0123456789")` before `atoi` (`0x405a58`), and its `tp_system` screens metacharacters with `strpbrk` (`0x40c7f8`), so `1;>a` cannot pass that build at all. The sibling is fixed, which is a reason not to generalize the C50 result. Second, I walked the IPv4 SSDP M-SEARCH path through `libupnp.so`, the other unauthenticated way into this code, and found no overflow or command route in the receive, parser, struct-copy, and reply sites I visited. Neither cross-check found a new bug, and both are written down precisely because a negative you went looking for is worth more than a positive you assumed.
+**Before trusting any of that, two cross-checks, both negative.** First, is the newer hardware even affected? I pulled the current Archer C20 v6 build (`260811`, the same `upnpd` family) and read its `AddPortMapping` handler, where the C50 had nothing:
+
+```text
+0x00405a58   lw    a0, (var_38h)       ; the NewInternalPort string
+0x00405a60   addiu a1, v0, -0x90       ; charset = "1234567890"
+0x00405a64   jal   fcn.00405710        ; strlen(s) == strspn(s, charset) ?
+0x00405a70   beqz  v0, 0x405ad8        ;   not all digits -> Invalid Args
+```
+
+`fcn.00405710` computes `strlen` and `strspn` over the field and returns whether they match. The port field's charset is `1234567890`, pure decimal, so `1;>a` (with its `;` and `>`) fails the span, `v0` comes back zero, and the handler jumps to Invalid Args before `atoi` ever runs. Its `tp_system` also screens metacharacters with `strpbrk` at `0x40c7f8`. The sibling is fixed, which is a reason not to generalize the C50 result. Second, I walked the IPv4 SSDP M-SEARCH path through `libupnp.so`, the other unauthenticated way into this code, and found no overflow or command route in the receive, parser, struct-copy, and reply sites I visited. Neither cross-check found a new bug, and both are written down precisely because a negative you went looking for is worth more than a positive you assumed.
 
 So what do I actually have? A **bounded file-creation effect**: an empty file, created by a daemon I had to start by hand, in an emulator that could not boot that daemon on its own, and never shown to be reachable on a real router. The shipped config does enable UPnP (`UPnPCfg/Enable=1`), but "enabled in the config" and "started, bound, and reachable on a shipped unit" are different claims, and I could only reach the first.
 
