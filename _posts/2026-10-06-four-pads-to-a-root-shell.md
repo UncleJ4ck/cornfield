@@ -45,7 +45,7 @@ Here is the subject. An unremarkable white box that sat routing packets for year
 
 Open it up and the whole board is a single green PCB, which is most of the design:
 
-![The opened Archer A5 board. The red box marks the four-pin UART serial header next to the power circuitry, the pads this whole teardown turns on. Also visible: the MediaTek MT7628 SoC (the large central chip), the ESMT DDR RAM to its left, two U&T ethernet magnetics, the 5 GHz radio, and the LED light-pipes with their silkscreen labels (Power, 2.4G, 5G, LAN, Internet, WPS) along the bottom; the production barcode on the shield is blacked out]({{ '/assets/img/posts/archer-board-overview.jpg' | relative_url }})
+![The opened Archer A5 board. The red box marks the four-pin UART serial header next to the power circuitry, the pads this whole teardown turns on. Also visible: the MediaTek MT7628 SoC (the large central chip), the ESMT DDR RAM to its left, two U&T ethernet magnetics, the 5 GHz radio, and the LED light-pipes with their silkscreen labels (Power, 2.4G, 5G, LAN, Internet, WPS) along the bottom]({{ '/assets/img/posts/archer-board-overview.jpg' | relative_url }})
 
 The large square chip in the centre is the MediaTek **MT7628** SoC, the whole router on one die: CPU, switch, and 2.4 GHz radio. To its left is the ESMT DDR chip (the 64 MB of RAM the boot log counted), the two black `U&T UTH20T29` blocks are the ethernet port magnetics, and the separate chip toward the bottom right is the 5 GHz radio. Along the bottom edge, the green light-pipes carry the front-panel LEDs, with the board helpfully silk-screened `Power 2.4G 5G LAN Internet WPS`. The white wire you can see tacked to a pad near the centre is one leg of the serial connection.
 
