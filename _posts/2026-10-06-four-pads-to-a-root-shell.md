@@ -8,7 +8,7 @@ category: research
 tldr: "Across two sibling TP-Link Archer routers I measured an unlabelled four-pad serial header with a multimeter, reached a root console over UART, dumped the firmware over TFTP, found the web-panel password stored at rest, triaged the MIPS service binaries, and then, years later, used firmware emulation to disprove my own earlier remote-RCE claim. No CVE. The interesting part is everywhere the evidence stopped me from claiming more than I could prove."
 ---
 
-This is a writeup I have been meaning to publish for years. I opened this router back in 2022, filled a notebook and a camera roll, and then life moved on before I ever wrote it up. The notes and photos sat in a folder. The 2026 revisit is what finally gave me the excuse to finish it, so what follows is old research closed out at last, not a fresh hunt.
+This is a writeup I have been meaning to publish for years. I opened this router back in 2022, filled a notebook and a camera roll, and then life moved on before I ever wrote it up. I came back to it in 2024, poked at it again, found nothing new, and set it down. In 2026 I thought, why not have another look, and that pass is the one that finally gave me the excuse to finish the whole thing. So what follows is old research closed out at last, not a fresh hunt.
 
 There is no CVE at the end of this post. I want to say that in the first line, because the usual shape of a hardware-hacking writeup is a ramp toward one dramatic bug, and this is not that. This is the longer and more honest shape: a multi-year poke at two cheap routers that taught me more about *verification* than about TP-Link. The best tool on the bench was a multimeter, the most useful result was a negative one, and the climax is me deleting an advisory I had written with my own name on it.
 
@@ -24,6 +24,7 @@ A skimmer's version of the whole chain, before any detail:
 4. Inside the running system, the web admin panel's credential sits in a world-readable tmpfs file as an unsalted MD5. A shell reads it directly.
 5. The service binaries are stripped 32-bit MIPS with no modern mitigations at all, and `httpd` contains a textbook unbounded-copy sink. These are *sinks*, not a demonstrated remote exploit, and I am careful about the difference.
 6. Years later I revisited an old claim that one of these routers had an unauthenticated UPnP remote command execution. Under firmware emulation with a proper negative control, the claim did not survive. I withdrew it.
+7. Then I went wider and checked every unauthenticated daemon on the box for a command sink or a stack overflow. All of them came back bounded, fixed, or authenticated, with one honest exception: a 2012 library bug still shipping in the WPS daemon that I could not prove reaches its socket. No new remote code execution.
 
 ## Two devices, kept apart on purpose
 
