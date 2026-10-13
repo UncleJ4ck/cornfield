@@ -21,6 +21,8 @@ Found with Ilyase Dehy. I tested everything below on a fresh `odoo:19.0` (image 
 Before any of the interesting parts, the warm-up. `/pos-self/data/<config_id>` is what the page calls on load. It does not even need the shared token:
 
 ```
+$ python3 setup.py          # seeds the restaurant: 5 tables, 3 customer orders
+$ python3 poc.py
 === 1. unauthenticated floor plan disclosure ===
   no token sent -- got 5 tables, 1 products
   table 1: identifier=f05c8ddf
@@ -112,7 +114,7 @@ The `table_identifier` is mine (`f05c8ddf`), the `uuid` is Charlie's. I send `am
 === 3. order hijack (not fixed by PR 259915) ===
   target: charlie order 3  table 2
   attacker at table 1 -- uses only the shared QR token
-  before: email=charlie.secret@company.com  total=12.5
+  before: email=charlie.secret@company.example  total=12.5
   after:  email=receipts@attacker.com       total=57.51
   [+] HIJACKED -- receipt now goes to attacker, bill inflated
       attacker used only the shared QR token, never needed charlie's access_token
@@ -152,8 +154,37 @@ The cross-table order visibility was a deliberate 19.0 feature and was changed i
 
 The lesson the commit history teaches by accident: read what your fix returns, not what it deletes. And when you strip the fields that look like PII, check whether the identifier you left behind is the key to a write you never locked.
 
+## re-verified against current source, 2026-10-13
+
+This post said the write primitive was the half nobody closed. Seven months on, that is no longer true of the shipping code, and the honest thing is to say so here rather than leave the claim standing.
+
+Read at `0f577f1d3` on branch `19.0`. Three guards now exist that did not when I tested.
+
+Per-order tokens on the read and delete paths. `get_order`, `remove_order` and `send_self_order_receipt` in `addons/pos_self_order/controllers/orders.py` each now do a constant-time compare of a per-order secret, not just the shared config token:
+
+```python
+if not pos_order.exists() or not consteq(pos_order.access_token, order_access_token):
+```
+
+The exact reparenting trick is named and blocked. `addons/pos_self_order/models/pos_order.py`, in `_check_pos_order_lines`:
+
+```python
+# An update must target a line of the order being synced. Without this an arbitrary
+# line id would be written, and reparented to this order through the order_id below.
+if command == Command.UPDATE and id_to_use not in existing_lines.ids:
+    return []
+```
+
+That comment describes the write primitive in this post. An update command naming a line id outside the order being synced is now dropped.
+
+The totals are recomputed server-side. `process_order` builds a filtered copy of the payload through `_check_pos_order`, described in its own comment as keeping "only the necessary fields for order creation to avoid potential security issues", then calls `recompute_prices()` and writes `amount_total` from the server's own figures rather than the client's. The bill inflation from 12.5 to 57.51 went through the client-supplied total; that route is closed.
+
+What I am not claiming: I have not re-run the exploit against current source. I am reporting the guards that now exist with their file and line, not a fresh negative result. If you want the stronger statement, the test is to replay the stage-3 payload and watch for the dropped update command.
+
+Worth noting how those comments read. They are written as answers to a specific attack rather than as general hardening, which usually means someone reproduced the concrete thing.
+
 ## references
 
-- [pos_self_order controller on GitHub](https://github.com/odoo/odoo/blob/19.0/addons/pos_self_order/controllers/orders.py)
+- [pos_self_order controller on GitHub](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/pos_self_order/controllers/orders.py)
 - [CWE-639: Authorization Bypass Through User-Controlled Key](https://cwe.mitre.org/data/definitions/639.html)
 - [CWE-200: Exposure of Sensitive Information](https://cwe.mitre.org/data/definitions/200.html)

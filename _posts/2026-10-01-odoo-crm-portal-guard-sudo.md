@@ -24,9 +24,7 @@ Reported through Intigriti on 2026-09-15 against Odoo 19.0 at commit `faccb11c3e
 def _assert_portal_write_access(self):
     if (
         self.env.user._is_portal() and not self.env.su and
-        self != self.filtered_domain([
-            ('partner_assigned_id', 'child_of', self.env.user.commercial_partner_id.id)
-        ])
+        self != self.filtered_domain([('partner_assigned_id', 'child_of', self.env.user.commercial_partner_id.id)])
     ):
         raise AccessError(_('Only users with commercial partner which is a parent of the assigned partner can edit this lead.'))
 ```
@@ -195,8 +193,29 @@ Reported through Intigriti on 2026-09-15 against Odoo 19.0, commit `faccb11c3eba
 
 No commit, no CVE, no fix. The five public methods and the guard are unchanged on `odoo/odoo` branch `19.0` at the time of writing. If you run `website_crm_partner_assign` on an Odoo 19.0 instance, the behaviour above is what any ordinary employee can do today.
 
+## re-verified against current source, 2026-10-13
+
+Checked at `0f577f1d3` on branch `19.0`, because an accepted-risk closure means the behaviour should still be live and that claim decays if nobody re-reads it.
+
+The guard is unchanged, byte for byte:
+
+```python
+def _assert_portal_write_access(self):
+    if (
+        self.env.user._is_portal() and not self.env.su and
+        self != self.filtered_domain([('partner_assigned_id', 'child_of', self.env.user.commercial_partner_id.id)])
+    ):
+        raise AccessError(_('Only users with commercial partner which is a parent of the assigned partner can edit this lead.'))
+```
+
+The three ACL rows that make the bypass meaningful are unchanged too: `crm.lead` is granted to `sales_team.group_sale_manager` and `sales_team.group_sale_salesman` in `addons/crm/security/ir.model.access.csv`, and to `base.group_portal` read-only in `addons/website_crm_partner_assign/security/ir.model.access.csv`. `base.group_user` appears in none of them, which is why the attacker's direct `crm.lead.read()` is refused and why the `sudo()` path is a bypass rather than a permission.
+
+So everything in this post is still true of the shipping code seven months after it was reported. If you run `website_crm_partner_assign` on Odoo 19.0 today, an ordinary employee can do what is described above.
+
+One note on the contrast with my other findings, since this one was closed on policy rather than on mechanism. The three posts where Odoo shipped a fix all had either an unauthenticated attacker or a portal attacker. Every finding of mine with an internal-user attacker was closed accepted risk or informative, this one included. The deciding variable was not severity or quality of proof. It was which side of the employment contract the attacker sat on.
+
 ## references
 
 - [`website_crm_partner_assign` on GitHub](https://github.com/odoo/odoo/tree/19.0/addons/website_crm_partner_assign)
-- [`_assert_portal_write_access()` on GitHub](https://github.com/odoo/odoo/blob/19.0/addons/website_crm_partner_assign/models/crm_lead.py#L36-L41)
+- [`_assert_portal_write_access()` on GitHub](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/website_crm_partner_assign/models/crm_lead.py#L36-L41)
 - [CWE-863: Incorrect Authorization](https://cwe.mitre.org/data/definitions/863.html)

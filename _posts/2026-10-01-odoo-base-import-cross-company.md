@@ -135,7 +135,10 @@ When alice later clicks Import on the wizard, `execute_import` calls `model.load
 def set_file(self, id):
     file = request.httprequest.files.getlist('ufile')[0]
     written = request.env['base_import.import'].browse(int(id)).write({
-        'file': file.read(), 'file_name': file.filename, 'file_type': file.content_type})
+        'file': file.read(),
+        'file_name': file.filename,
+        'file_type': file.content_type,
+    })
 ```
 
 No `auth=` is declared. The dispatcher defaults it to `auth='user'` (`odoo/http.py:915-918`, `merged_routing = {'auth': 'user', ...}`). The `id` goes straight from the request into `browse(int(id))`, and the `write` is subject to the same missing record rule.
@@ -210,9 +213,21 @@ The class deserves the systemic pass. Since TransientModel stopped isolating by 
 
 ## report status and the public fix
 
-Reported through Intigriti on 2026-09-06 against Odoo 19.0. Triage verified on 2026-09-17 and forwarded it to Odoo. Closed on 2026-09-22 as **duplicate**: Odoo already had the finding on file and had already resolved it.
+Reported through Intigriti on 2026-09-06 against Odoo 19.0. Triage verified on 2026-09-17 and forwarded it to Odoo. Closed as **duplicate**: Odoo already had the finding on file and had already resolved it internally. The submission is Archived with a positive outcome at High.
 
-The fix is public, on `odoo/odoo` branch `19.0`, commit [`2fd061b70`](https://github.com/odoo/odoo/commit/2fd061b70426e385e8e12c93f0371f7d475d2c01) dated 2026-08-04, a month before I filed. The commit message, internal ticket `opw-6535276`:
+The fix is public, on `odoo/odoo` branch `19.0`, commit [`2fd061b70`](https://github.com/odoo/odoo/commit/2fd061b70426e385e8e12c93f0371f7d475d2c01), internal ticket `opw-6535276`.
+
+**Correction, 2026-10-13.** This paragraph originally read "dated 2026-08-04, a month before I filed", which is true of the author date and misleading about everything else. The two dates differ:
+
+```
+$ git log -1 --format='authored: %ad%ncommitted: %cd' --date=short 2fd061b70
+authored:  2026-08-04
+committed: 2026-09-10
+```
+
+Odoo wrote the fix on 2026-08-04 and it landed on the public `19.0` branch on 2026-09-10. I filed on 2026-09-06. So the duplicate ruling is correct, Odoo genuinely had it first, and there was no public artifact to dedup against at the time I filed. The original sentence implied I had missed visible prior art. I had not.
+
+The commit message:
 
 > `[FIX] base_import: scope import records to their owner`
 > Ensure import sessions remain scoped to the user who created them.
@@ -234,6 +249,42 @@ What it adds is nine lines, one new file `addons/base_import/security/base_impor
 and the matching line in `__manifest__.py` to load it. That is the creator-scoping rule the remediation section above suggested, essentially character-for-character. No CVE was assigned; Odoo closed it as a routine fix.
 
 Two things worth noting about the fix. First, the rule is not restricted by `groups`, so it applies to every user including administrators, which is tighter than my proposal and the right default for a wizard. Second, the rule is on `base_import.import` only. The 25-model sweep above still applies: the structural problem is that TransientModel stopped isolating by creator in 14.0, and every wizard with an ACL and no rule has the same shape. A per-model fix closes one row at a time.
+
+## re-verified against current source, 2026-10-13
+
+Two checks at `0f577f1d3` on branch `19.0`.
+
+The fix is in the tree. `addons/base_import/security/base_import_security.xml` exists and carries the creator-scoping rule with no `groups` restriction, so it applies to administrators too:
+
+```xml
+<record id="base_import_import_own_rule" model="ir.rule">
+    <field name="name">Import: access own records</field>
+    <field name="model_id" ref="model_base_import_import"/>
+    <field name="domain_force">[('create_uid', '=', user.id)]</field>
+</record>
+```
+
+The class behind it is still open, and that is the part worth re-measuring rather than restating. I re-ran the sweep for the same shape, a `TransientModel` with an ACL granting a low-privilege group read or write and no `ir.rule` anywhere referencing it:
+
+```
+$ python3 sweep_transient.py
+TransientModels found: 233
+low-priv-writable with NO ir.rule: 19
+    base.module.install.request       ['base.group_user']
+    compliance.letter.wizard          ['base.group_user']
+    hr.expense.split                  ['base.group_user']
+    mail.activity.schedule            ['base.group_user']
+    mail.followers.edit               ['base.group_user']
+    mail.template.preview             ['base.group_user']
+    product.label.layout              ['base.group_user']
+    ...
+```
+
+September's run said 25 of 224. Today it is 19 of 233, so six were closed and the shape survives. `base_import.import` is off the list, which is the fix working.
+
+Read that number as approximate, because the instrument is crude in two ways I can name. It derives a model name from the ACL's `model_x_y` column by swapping underscores for dots, which mangles any model whose own name contains an underscore. And it detects a record rule by regex over XML rather than by loading the registry, so a rule declared in an unusual way reads as absent. Both failure modes inflate the count, so 19 is a ceiling, not a measurement. The useful output is the named list, not the total.
+
+Worth saying plainly: none of those 19 is a finding. The shape is a prerequisite, not a bug. It matters only when the wizard holds something, which is exactly why `base_import.import` was the loud one: its `Binary(attachment=False)` field put the uploaded bytes in the row itself. `mail.template.preview` and `mail.activity.schedule` are the two on that list I would read next, because both touch rendering or scheduling on behalf of a caller.
 
 ## references
 

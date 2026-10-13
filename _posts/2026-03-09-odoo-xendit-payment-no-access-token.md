@@ -16,6 +16,8 @@ I lined up the payment controllers and read the route signatures. Authorize.Net 
 
 ## the endpoint, copied out of the running container
 
+This is the vulnerable pre-fix version, quoted as it shipped at the time of the report. It is no longer current source; the fix is further down.
+
 This is not from a git blame or my memory. I pulled it out of the live `odoo:19.0` image I tested against:
 
 ```python
@@ -99,7 +101,7 @@ Then I did the test the whole hypothesis hangs on: mint a real card token on my 
 ```text
 attacker -> POST /payment/xendit/payment  (NO AUTH)
             reference=VICTIM-O6S7BF       (victim's transaction)
-            token_ref=69ad3279a841ee10bf9a8e80  (attacker's own card token)
+            token_ref=69ad3279...e80  (attacker's own card token)
 BEFORE   ref=VICTIM-O6S7BF  state=draft
 AFTER    ref=VICTIM-O6S7BF  state=error  msg=Credit card token has already been used
 ```
@@ -109,6 +111,30 @@ AFTER    ref=VICTIM-O6S7BF  state=error  msg=Credit card token has already been 
 ## what a valid token does
 
 The charge path is deterministic once Xendit accepts the token. `_xendit_create_charge` posts to Xendit, the success response goes through `_handle_notification_data`, that calls `_set_done`, and `_set_done` triggers post-processing: the sale order confirms, a delivery picking is created, stock is reserved. In my submitted report I drove that full chain against the Xendit sandbox: a card token I minted with the merchant's public key (Odoo prints it in the checkout HTML), 3DS cleared, then replayed on the victim's reference. The transaction went `draft -> done` with `provider_reference=69ad9583c06e738456832dca`, a real Xendit charge id, sale order `S00014` auto confirmed, picking `WH/OUT/00005` assigned. That last mile depends on the sandbox 3DS flow, which is flaky, so the reliable, repeatable proof is the `draft -> error` above. Both share the one root: a public endpoint performs a privileged action on an arbitrary transaction with no authorization.
+
+## re-verified against current source, 2026-10-13
+
+Read out of the checkout at `0f577f1d3` rather than taken from the closure note. `addons/payment_xendit/controllers/main.py`:
+
+```python
+@http.route('/payment/xendit/payment', type='jsonrpc', auth='public')
+def xendit_payment(self, reference, token_ref, access_token, auth_id=None):
+    """ Kept for backward compatibility; no longer used, as card payments now go through the
+    Xendit-hosted payment link instead of the inline form.
+
+    :param str reference: The reference of the transaction.
+    :param str token_ref: The reference of the Xendit token to use to make the payment.
+    :param str access_token: The access token used to verify the provided values
+    :param str auth_id: The authentication id to use to make the payment.
+    :return: None
+    """
+```
+
+Two things changed, not one. `access_token` is now a required positional parameter, so a caller omitting it gets a `TypeError` at dispatch rather than reaching the charge, and the route is additionally documented as dead weight: card payments moved to the Xendit-hosted payment link, so the inline form that made this reachable is gone.
+
+That ordering matters for anyone reading the diff later. Making the parameter required is the security fix. Retiring the inline flow is what makes the route uninteresting. A fix that only did the second would have left the code path live for any deployment still on the old flow.
+
+The endpoint is still `auth='public'`, which is correct: a payment return has to be reachable without a session. Public was never the bug. The bug was public plus no token check, and the token check is the half that was missing.
 
 ## references are guessable, which removes the last excuse
 
@@ -130,21 +156,39 @@ By the numbers I scored it `AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:H/A:L` = 8.6, CWE-862 
 
 The fix is the one guard every sibling already carries. This is the shape it takes, the missing `check_access_token` dropped in before the charge:
 
-```python
-def xendit_payment(self, reference, token_ref, access_token, auth_id=None):
-    tx_sudo = request.env['payment.transaction'].sudo().search([('reference', '=', reference)])
-    if not payment_utils.check_access_token(access_token, reference, tx_sudo.amount):
-        raise ValidationError("Invalid access token")
-    tx_sudo._xendit_create_charge(token_ref, auth_id=auth_id)
+**Corrected 2026-10-13.** This block was a reconstruction from memory and it was wrong in two ways: it passed three arguments to `check_access_token` and invented the error string. Here is what commit [`6cea53e0`](https://github.com/odoo/odoo/commit/6cea53e0ae7287a4aaffc10efa2730511e8309cf) actually changed, read out of git:
+
+```diff
+-from odoo import http
++from odoo import _, http
++from odoo.exceptions import ValidationError
+
+-    def xendit_payment(self, reference, token_ref, auth_id=None):
++    def xendit_payment(self, reference, token_ref, access_token, auth_id=None):
++        :param str access_token: The access token used to verify the provided values
++        if not payment_utils.check_access_token(access_token, reference):
++            raise ValidationError(_("The access token doesn't match the transaction reference."))
 ```
 
-The controller block I pasted above is the one running in the `odoo:19.0` image I tested, still the three-line vulnerable version, which is where the `draft -> error` proof was captured. The report was accepted (final Medium 5.3 after Odoo requalified integrity to low) and Odoo resolved it on 2026-06-23 in commit [`6cea53e0`](https://github.com/odoo/odoo/commit/6cea53e0ae7287a4aaffc10efa2730511e8309cf). No CVE was assigned; Odoo handled it as a normal commit.
+The detail I got wrong is the interesting one. The real check is `check_access_token(access_token, reference)`, two arguments. The token is bound to the transaction reference and **not** to the amount.
+
+Compare the sibling route in the same file, `xendit_return`, which does bind the amount:
+
+```python
+if tx_sudo and payment_utils.check_access_token(access_token, tx_ref, tx_sudo.amount):
+```
+
+`payment_utils.check_access_token` takes `*values` and HMACs whatever it is handed, so the two call sites commit to different things. On the return route a token is only valid for that reference at that amount. On the payment route it is valid for the reference at any amount. Whether that matters depends on whether anything between token generation and the charge can move `tx_sudo.amount`, and on this route the token is generated in `_get_specific_processing_values` for the same transaction, so I am recording the asymmetry rather than claiming a bug. `hoodie:` assumes the amount cannot change between token issue and charge on this route; disproof is a flow that reissues or mutates the transaction amount while keeping the reference, then replays the earlier token.
+
+The commit also patches `generate_access_token` in the tests, which is the part that keeps the fix honest: without a test that mints a real token the check could be weakened later and nothing would notice.
+
+The vulnerable three-line version quoted earlier is the one running in the `odoo:19.0` image I tested, which is where the `draft -> error` proof was captured. The report was accepted (final Medium 5.3, `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N`, after Odoo requalified integrity to low) and Odoo resolved it on 2026-06-23 in commit [`6cea53e0`](https://github.com/odoo/odoo/commit/6cea53e0ae7287a4aaffc10efa2730511e8309cf). No CVE was assigned; Odoo handled it as a normal commit.
 
 ## references
 
-- [payment_xendit controller on GitHub](https://github.com/odoo/odoo/blob/19.0/addons/payment_xendit/controllers/main.py)
-- [payment_authorize controller (the guarded sibling)](https://github.com/odoo/odoo/blob/19.0/addons/payment_authorize/controllers/main.py)
+- [payment_xendit controller on GitHub](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/payment_xendit/controllers/main.py)
+- [payment_authorize controller (the guarded sibling)](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/payment_authorize/controllers/main.py)
 - [CWE-862: Missing Authorization](https://cwe.mitre.org/data/definitions/862.html)
-- [Odoo payment access tokens (payment/utils.py)](https://github.com/odoo/odoo/blob/19.0/addons/payment/utils.py)
+- [Odoo payment access tokens (payment/utils.py)](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/payment/utils.py)
 - [CVE-2025-14461 (Xendit WooCommerce, same CWE-862)](https://nvd.nist.gov/vuln/detail/CVE-2025-14461)
 - [CVE-2021-23178 (Odoo payment token reuse)](https://nvd.nist.gov/vuln/detail/CVE-2021-23178)

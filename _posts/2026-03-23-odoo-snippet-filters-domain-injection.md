@@ -70,7 +70,7 @@ Odoo 19 replaced `expression.AND()` with the new `Domain` class, and `Domain.AND
 
 It is also the entire protection. `Domain.AND` says nothing about which **field paths** a leaf may reference. You cannot cancel the existing filters, but you can append a condition on any field reachable by relational traversal from `product.product`, and because the search runs as SUPERUSER, field-level access control never fires:
 
-```python
+```text
 # attacker sends:
 search_domain = [("create_uid.company_id.attendance_kiosk_key", "=like", "a48f%")]
 
@@ -174,47 +174,116 @@ This is not user enumeration. It does not check whether a username exists; it re
 
 ## the fix, from the commit
 
-Commit `c0c93e0110f9`, `[FIX] website_sale: dynamic filters as a visitor` (opw-6041547), drops superuser before the product domain is evaluated:
+**Corrected 2026-10-13.** This section originally cited commit `c0c93e0110f9` and showed a two-hunk diff. Neither was right. That SHA does not exist in `odoo/odoo`, which I only established after pulling the full history: a shallow clone answers "not found" for every commit outside its window, so the wrong SHA had survived on a negative I had no right to trust. The second hunk never existed either. Both are replaced below with what git actually holds.
+
+The real fix is [`b509b3607cb`](https://github.com/odoo/odoo/commit/b509b3607cb13186985933cc4a35ef649347dbad), `[FIX] website_sale: dynamic filters as a visitor`, internal ticket `opw-6041547`, authored 2026-01-29 and committed 2026-03-23. One file, one line changed:
 
 ```diff
- def _get_products(self, mode, **kwargs):
-     dynamic_filter = self.env.context.get("dynamic_filter")
--    handler = getattr(self, "_get_products_%s" % mode, self._get_products_latest_sold)
-+    handler = getattr(self.sudo(False), "_get_products_%s" % mode, self.sudo(False)._get_products_latest_sold)
-```
-```diff
- def _get_products_latest_sold(self, website, limit, domain, **_kwargs):
-     if sold_products:
--        products = sold_products.filtered_domain(domain)[:limit]
-+        products = sold_products.sudo(False).filtered_domain(domain)[:limit]
+-        handler = getattr(self, '_get_products_%s' % mode, self._get_products_latest_sold)
++        handler = getattr(self.sudo(False), '_get_products_%s' % mode, self.sudo(False)._get_products_latest_sold)
 ```
 
-`sudo(False)` evaluates the attacker's domain as the public website user. A leaf traversing into a field that user cannot read now raises an access error instead of silently resolving, and the oracle loses what it was reading. My original boolean-oracle PoC against the patched build fails with exactly that access error, which is the cleanest confirmation the fix is real. Odoo committed to publishing a CVE for it.
+`sudo(False)` evaluates the attacker's domain as the public website user. A leaf traversing into a field that user cannot read now raises an access error instead of silently resolving, and the oracle loses what it was reading. My original boolean-oracle PoC against the patched build fails with exactly that access error, which is the cleanest confirmation the fix is real.
 
-## the residual that is still live
+What the fix does not do is worth stating, because it is the interesting part. The attacker still controls `search_domain`, and it is still ANDed straight into the query with no field allowlist, no depth limit and no rejection of relational traversal. Odoo removed the privilege the domain ran under, not the attacker's control of the domain. That is the right call here: the oracle existed because arbitrary field paths were evaluated as superuser, so de-elevation kills the class rather than playing whack-a-mole with field names.
 
-The patch closes the multi-record oracle. The single-record branch of the same endpoint did not get the same treatment. With `limit=1` plus a `res_model` and `res_id`, an unauthenticated request still triggers an elevated render that reads fields off arbitrary records:
+## the residual, and its fix
+
+The original version of this post ended with a live residual: the single-record branch, `limit=1` plus `res_model` and `res_id`, still triggered an elevated render that read fields off arbitrary records such as `res.users` and `res.company`.
+
+The payload that reached it, kept here because the fix below is only legible next to what it blocks:
 
 ```bash
-curl -s http://localhost:8019/website/snippet/filters \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"call","id":1,"params":{
-        "filter_id":7,
-        "template_key":"website_sale.dynamic_filter_template_product_public_category_default",
-        "limit":1,"res_model":"res.users","res_id":1}}'
+$ curl -s http://localhost:8019/website/snippet/filters \
+    -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"call","id":1,"params":{
+          "filter_id":7,
+          "template_key":"website_sale.dynamic_filter_template_product_public_category_default",
+          "limit":1,"res_model":"res.users","res_id":1}}'
+-> result: renders one res.users record, name and login identifiers readable
 ```
 
-It is narrower than the oracle, it leaks names and identifiers from sensitive models like `res.users` and `res.company` rather than walking arbitrary fields, and I have not driven it past that. I am flagging it as a partial residual, not dressing it up as the full pre-auth oracle, which is closed. No CVE for the residual.
+That is closed too, in [`9bc3520d261`](https://github.com/odoo/odoo/commit/9bc3520d261f9dc0428313d75f1459f73be1dcf3), `[FIX] website, *: restrict access to content in dynamic snippet config`, authored 2026-04-01 and committed 2026-04-03, closing `odoo/odoo#257208`. Two changes, and both are needed:
+
+```diff
++        website_filter_models = list({
++            website_filter.action_server_id.model_id.model if website_filter.action_server_id
++            else website_filter.filter_id.model_id
++            for website_filter in self.env['website.snippet.filter'].search([])
++        })
++        if model_name and model_name not in website_filter_models:
++            return []
+-                ) if not single_record_filter else self.env[model_name].browse([res_id])
++                ) if not single_record_filter else self.env[model_name].sudo(False).search([('id', '=', res_id)], limit=1)
+```
+
+The allowlist is the obvious half: `res_model` must name a model that some `website.snippet.filter` actually points at, so `res.users` returns an empty list before anything renders.
+
+The second half is the one worth learning from. `browse([res_id])` was swapped for `sudo(False).search([('id', '=', res_id)], limit=1)`. Those are not equivalent. `browse` constructs a recordset by id without consulting record rules, and the rules only bite later when a field is read, which in an elevated environment is never. `search` runs the id through the ORM's rule layer up front, and `sudo(False)` makes sure there is a real user for those rules to apply to. Swapping browse for search is a security change disguised as a refactor, and it is the one that actually enforces the boundary.
+
+I confirmed both are present at `0f577f1d3` on branch `19.0`, at `addons/website/models/website_snippet_filter.py:91-97` and the search on the single-record branch.
+
+So the honest status today: the pre-auth oracle is closed, and the residual I flagged as still live is closed as well. Neither carries a CVE.
 
 ## the lesson
 
-A domain is code. The only boundary on a public endpoint that evaluates one is the identity it runs under. `auth='public'` plus `.sudo().run()` is the pair to grep for: open to everyone, executed as root. `Domain.AND` stopped operator injection and everyone assumed the input was safe; it never constrained the field paths, which is where the whole oracle lives. The fix is one word, `sudo(False)`, applied to the branch that forgot it.
+A domain is code. The only boundary on a public endpoint that evaluates one is the identity it runs under. `auth='public'` plus `.sudo().run()` is the pair to grep for: open to everyone, executed as root. `Domain.AND` stopped operator injection and everyone assumed the input was safe; it never constrained the field paths, which is where the whole oracle lives. The fix is one word, `sudo(False)`, applied to the branch that forgot it. The residual needed a second idea on top: `browse()` skips record rules and `search()` does not, so swapping one for the other is an access-control change even though it reads like tidying.
+
+## re-verified against current source, 2026-10-13
+
+Read at `0f577f1d3`. The de-elevation held, and it is applied in both branches rather than only the one I originally traced.
+
+The `filter_id` branch in `addons/website/models/website_snippet_filter.py` now runs the search as the real caller:
+
+```python
+records = self.env[model_name].sudo(False).with_context(**literal_eval(filter_sudo.context)).search(
+```
+
+The `website_sale` consumer does the same thing to its handler, in `_get_products`:
+
+```python
+handler = getattr(self.sudo(False), '_get_products_%s' % mode, self.sudo(False)._get_products_latest_sold)
+```
+
+The structural point is worth drawing out, because it is the opposite of what most people would patch. The attacker still controls `search_domain`, and it is still ANDed straight into the query:
+
+```python
+domain = Domain.AND([
+    [('website_published', '=', True)] if self.env.user._is_public() or self.env.user._is_portal() else [],
+    website.website_domain(),
+    [('company_id', 'in', [False, website.company_id.id])],
+    search_domain or [],
+])
+```
+
+Nothing validates the field paths in that domain. No allowlist, no depth limit, no rejection of relational traversal. The fix removed the privilege the domain executed under, not the attacker's control of the domain. That is the correct call: the oracle existed because arbitrary field paths were evaluated as superuser, and once the query runs as the public user the ORM's own record rules and field access decide what a traversal can reach.
+
+One asymmetry remains and I am flagging it as an observation, not a finding. The `action_server_id` branch still invokes the action itself elevated:
+
+```python
+return self.action_server_id.with_context(
+    dynamic_filter=self,
+    limit=limit,
+    search_domain=search_domain,
+).sudo().run() or []
+```
+
+The elevation is on `run()`, while the product search inside the shipped handler is de-elevated by the `sudo(False)` above, so the known path is covered. Whether every server action a deployment can attach to a snippet filter de-elevates before it touches the domain is a per-action question, and `website_sale/data/data.xml` ships six filters bound to server actions. `hoodie:` assumes a custom or future server action could consume `search_domain` while still elevated; disproof is reading each `action_server_id` referenced by a `website.snippet.filter` record and confirming a `sudo(False)` before the domain reaches a search.
+
+The sibling route is guarded differently and is worth contrasting. `/website/snippet/options_filters` is `auth='user'`, requires `website.group_website_restricted_editor`, and validates the domain by field allowlist:
+
+```python
+assert all(condition.field_expr in request.env['website.snippet.filter']._fields for condition in search_domain.iter_conditions())
+```
+
+So Odoo does validate domain fields, on the editor-facing route where the caller is known. The public route is protected by de-elevation instead. Two different answers to the same input, chosen by who is calling.
 
 ## references
 
-- [website_snippet_filter (website_sale, 19.0)](https://github.com/odoo/odoo/blob/19.0/addons/website_sale/models/website_snippet_filter.py)
-- [get_dynamic_filter controller (website, 19.0)](https://github.com/odoo/odoo/blob/19.0/addons/website/controllers/main.py)
-- [Fix commit c0c93e0110f9](https://github.com/odoo/odoo/commit/c0c93e0110f9526e81fde4c1fdccb9ced0eefd97)
+- [website_snippet_filter (website_sale, 19.0)](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/website_sale/models/website_snippet_filter.py)
+- [get_dynamic_filter controller (website, 19.0)](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/website/controllers/main.py)
+- [Fix commit `b509b3607cb` (the sudo(False) de-elevation)](https://github.com/odoo/odoo/commit/b509b3607cb13186985933cc4a35ef649347dbad)
+- [Fix commit `9bc3520d261` (the single-record residual)](https://github.com/odoo/odoo/commit/9bc3520d261f9dc0428313d75f1459f73be1dcf3)
 - [CVE-2024-36259: Odoo oracle via crafted RPC search with elevated privileges](https://nvd.nist.gov/vuln/detail/CVE-2024-36259)
 - [CWE-639: Authorization Bypass Through User-Controlled Key](https://cwe.mitre.org/data/definitions/639.html)
 - [Odoo ORM search domains](https://www.odoo.com/documentation/19.0/developer/reference/backend/orm.html#search-domains)

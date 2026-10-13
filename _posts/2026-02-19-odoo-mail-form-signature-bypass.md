@@ -57,7 +57,7 @@ if model_name == 'mail.mail':
         value = kwargs['email_to'] + (':email_cc' if form_has_email_cc else '')
         hash_value = hmac(model_record.env, 'website_form_signature', value)
         if not consteq(kwargs["website_form_signature"], hash_value):
-            raise AccessDenied('invalid website_form_signature')
+            raise AccessDenied(self.env._('invalid website_form_signature'))
     request.env[model_name].sudo().browse(id_record).send()
 ```
 
@@ -145,8 +145,29 @@ CWE-347, improper verification of a cryptographic signature, chained into unauth
 
 Reported against Odoo 18.0 and 19.0, which share the same controller logic. Odoo accepted it, rewarded a bounty, and resolved it on 2026-06-24 in commit [`bca77627`](https://github.com/odoo/odoo/commit/bca776277f24ec4d0df79e6b4bac085b43c04dfb). The maintainer also noted an ongoing task to sign every field passed server-side, not just `email_to` and `email_cc`, prompted by a separate report. That is the right direction: the root problem is that the signature only ever covered a subset of the fields, so the fix is to bind all of them, not to add another `if`. No CVE was assigned; Odoo closed it as a normal commit.
 
+## re-verified against current source, 2026-10-13
+
+Checked out `odoo/odoo` at `0f577f1d3` on branch `19.0` and read the guard rather than trusting the closure note. `addons/website/controllers/form.py`:
+
+```python
+if model_name == 'mail.mail':
+    form_has_email_cc = {'email_cc', 'email_bcc'} & kwargs.keys() or \
+        'email_cc' in kwargs["website_form_signature"]
+    # remove the email_cc information from the signature
+    kwargs["website_form_signature"] = kwargs["website_form_signature"].split(':')[0]
+    if kwargs.get("email_to") or form_has_email_cc:
+        value = kwargs.get('email_to', '') + (':email_cc' if form_has_email_cc else '')
+        hash_value = hmac(model_record.env, 'website_form_signature', value)
+        if not consteq(kwargs["website_form_signature"], hash_value):
+            raise AccessDenied(self.env._('invalid website_form_signature'))
+```
+
+The fix is the `or form_has_email_cc` in the condition, and it is the right shape. The bug was that the whole verification sat behind a truthiness test on one attacker-supplied field, so an empty `email_to` skipped the signature check entirely while `email_cc` still reached the send. The condition now fires when either field is present, and `email_to` is read with `kwargs.get('email_to', '')` so an absent value folds into the signed string rather than bypassing it.
+
+Two details worth keeping. `consteq` is a constant-time comparison, so the HMAC check is not itself a timing oracle. And the signature still covers only `email_to` and `email_cc`, which is the limitation the maintainer flagged at the time: the structural answer is signing every server-side field, and that remains outstanding work rather than something this commit closed.
+
 ## references
 
-- [website form controller on GitHub](https://github.com/odoo/odoo/blob/19.0/addons/website/controllers/form.py)
+- [website form controller on GitHub](https://github.com/odoo/odoo/blob/0f577f1d3a9bf80991b043695bfde9510593e301/addons/website/controllers/form.py)
 - [the fix commit `bca77627`](https://github.com/odoo/odoo/commit/bca776277f24ec4d0df79e6b4bac085b43c04dfb)
 - [CWE-347: Improper Verification of Cryptographic Signature](https://cwe.mitre.org/data/definitions/347.html)
