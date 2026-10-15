@@ -55,6 +55,12 @@ So the first instrument is not a terminal. It is a multimeter.
 
 ![Probing the router board with an AstroAI multimeter under a magnifier lamp, the handwritten pinout notebook visible at right]({{ '/assets/img/posts/archer-multimeter.jpg' | relative_url }})
 
+The meter here is an AstroAI AM33D, a thirty-dirham handheld with a rotary dial and nothing else. For UART pin-finding you only ever use two of its settings: the `V⎓` DC-volts range (I use the 20 V slot for a 3.3 V rail) and the `Ω` resistance range (the 20 kΩ slot picks up a signal line without pegging). You do not need autoranging, true-RMS, a bench supply, or a scope. The multimeter does the single job this step asks, which is tell four unmarked pads apart.
+
+![One multimeter probe held to a UART pad while the other sits on a nearby ground point, both tips visible on the live board]({{ '/assets/img/posts/archer-probes-on-board.jpg' | relative_url }})
+
+That photograph is the actual act, with both probes on the live board. Black on a ground pour, red walking the four pads in sequence. Steady hands matter more than they sound: a probe tip that slips off its pad and shorts across to a neighbour on a running board can brown out a rail or cook a trace. I rest a knuckle against the board as a brace, lower the probe straight down, and hold it still long enough for the display to settle. Four readings, two sweeps (volts and ohms), is usually three minutes of real bench time if the pads are clean.
+
 The method, in order:
 
 1. **Find a ground reference.** Any large copper pour, a shield can, or the barrel of the DC jack is tied to ground. Put the black probe there.
@@ -88,11 +94,23 @@ The wiring that follows from the table:
 
 One thing the photograph deliberately does not give you is a transferable pin-one orientation for *your* board. Copying my left-to-right order onto a different hardware revision is exactly the four-wire gamble this whole section exists to avoid. The repeatable thing is the method, not my pin numbers.
 
+With the three wires soldered on and the router plugged back into its own wall supply, the board boots itself. The front-edge LEDs are the first positive sign that the measurement did not kill anything:
+
+![The powered-on Archer board with three signal wires soldered to the UART header and the Power, 2.4G, 5G and LAN LEDs lit through the light-pipes on the front edge]({{ '/assets/img/posts/archer-powered-top.jpg' | relative_url }})
+
+Four of the six front LEDs are on in that shot. Power is the obvious one. 2.4G and 5G lighting mean the two radios have come up and are beaconing. LAN is lit because at least one ethernet PHY has link, so the switch chip is talking to the SoC. The two LEDs still dark are Internet (no WAN link, this bench is isolated) and WPS (no pairing attempt). None of this proves the UART will *speak*, it just proves the board survived the solder work and is running its normal firmware. The console test comes next.
+
 ## Act 2: the console was real
 
 With the adapter wired and a terminal open at 115200 baud, 8 data bits, no parity, one stop bit (8N1), power-cycling the router produces a flood of boot text. Here is the bench mid-boot: the opened board on the left, the little USB-serial adapter (the red board with the lit LED) bridging three jumper wires to the header, and the serial log scrolling on the monitor.
 
 ![The opened router board wired by three jumpers to a USB-serial adapter, with the live serial boot log on the monitor showing dropbear host-key generation]({{ '/assets/img/posts/archer-bench-boot.jpg' | relative_url }})
+
+![Side angle of the same bench: the opened router, the small red USB-serial adapter bridging three wires to the UART header, plugged into a laptop whose right monitor shows the live WLAN init log]({{ '/assets/img/posts/archer-serial-adapter-side.jpg' | relative_url }})
+
+The small red board between the router and the laptop is the USB-serial adapter, in this case a CH340-based module. Mechanically it is tiny; electrically it does one job that matters: level shifting. The router's UART swings between 0 V and 3.3 V (TTL logic), and no modern laptop has a serial port anyway. The adapter presents itself to Linux as a USB CDC-ACM device at `/dev/ttyUSB0`, buffers the asynchronous bits in both directions, and converts the 3.3 V board side to the 5 V USB side. That is the whole reason you cannot plug the router straight into the laptop with jumper wires and a USB plug: the voltages are wrong and the framing is wrong. The adapter translates both.
+
+On the terminal side, any serial client will do (`minicom -D /dev/ttyUSB0 -b 115200`, `picocom -b 115200 /dev/ttyUSB0`, `screen /dev/ttyUSB0 115200`). The right-hand monitor in that photo is the running log at the moment the Wi-Fi driver finishes its country-regulatory setup and `wscd` opens its UPnP port (`SSDP UDP PORT = 1900`), which is already useful intel about the services the router will listen on once it is online.
 
 The boot log is not decoration. Read top to bottom it fingerprints the entire platform. The photo above is the A5 mid-boot, but the only clean *textual* capture I kept is the C50's (`_misc/output.txt`), and the two scroll the same sequence line for line. Trimmed to the lines that carry information:
 
@@ -143,7 +161,7 @@ flowchart LR
   AUTH --> SH["root shell on ttyS1"]
 ```
 
-Then the login. This is the A5, photographed off the monitor. I am transcribing it rather than embedding the screen photo, because terminal text belongs in a code block where you can read and copy it, not in a JPEG:
+Then the login. This is the A5. The code block below is the readable version; the photo under it is the live screen at the same moment, kept so the bench proof sits next to the transcript rather than only in the text.
 
 ```text
 Archer A5 login: admin
@@ -156,6 +174,10 @@ web  usr  sbin  mnt  lib  dev  var  sys  proc  linuxrc  etc  bin
 ~ # bash
 -sh: bash: not found
 ```
+
+![Monitor photograph of the live Archer A5 login prompt: admin logs in, root login on ttyS1, whoami and bash both report not found, and the running wan_conn daemon prints handleStatusSetOpt debug lines showing the connectionStatus going to Disconnected]({{ '/assets/img/posts/archer-login-shell.jpg' | relative_url }})
+
+Two more things to read in that photo that the clean transcript does not carry. The prompt switches from the earlier boot stream to an interactive `~ #`, meaning the shell is actually taking input (I typed `HELP` in uppercase to see whether the lookup was case-folded; it was not, which is one tiny confirmation that this is a real shell and not a canned prompt). And underneath my commands, unrelated to my input, the running `wan_conn` daemon keeps printing `[ wan_conn_wanIpConn_handleStatusSetOpt ]` with `pNewObj->connectionStatus = Disconnected` and `pCurrObj->connectionStatus = Disconnected`. Those are debug prints from the production service that handles WAN link state. Two bits of intel for free: this build ships with its verbose debug logging compiled in rather than stripped, and the WAN daemon is cycling because the bench has no uplink. Both are useful later when the question becomes "what network-facing services does this firmware run."
 
 Three things in that short capture, each a genuine datum:
 
