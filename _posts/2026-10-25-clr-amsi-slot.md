@@ -1,7 +1,7 @@
 ---
 layout: post
-title: "clr.dll+0x929870: a reversible pointer primitive at CLR's resolved AmsiScanBuffer slot"
-subtitle: "CLR 4.8.9345.0 stores its resolved `AmsiScanBuffer` pointer at RVA `0x929870`. An 8-byte rewrite of that slot plus a 15-byte stub flip a direct-invoke scan from DETECTED to NOT_DETECTED and back. Measured on one CLR build with a manual slot-read-and-invoke cycle. The chain to an actual `Assembly.Load` bypass is NOT demonstrated; a detected-to-clean assembly-load differential needs a matched positive control that this round did not have."
+title: "one pointer, fifteen bytes, CLR's AMSI call lands on a stub we wrote"
+subtitle: "On CLR 4.8.9345.0, `AmsiScanBuffer` is resolved once at first `.NET` scan and the pointer rests at `[clr.dll + 0x929870]`. Eight bytes rewritten there route every direct invocation through a fifteen-byte stub that writes `NOT_DETECTED` and returns `S_OK`. Flip the pointer back and detection returns. Measured on one CLR build via a manual slot-read-and-invoke cycle. The `Assembly.Load` chain to a detected-to-clean .NET bypass is a separate layer and is not demonstrated here."
 date: 2026-10-25
 tags: [amsi, clr, dotnet, windows, defender, reverse-engineering]
 category: research
@@ -11,7 +11,7 @@ published: true
 
 _Related research: [shedskin](/shedskin/) covers mpengine's appname dispatcher; [exact-32768](/amsi-exact-32768/) covers PowerShell's result check. This post examines a separate CLR call site._
 
-Third of three posts from a side project that started in May 2026. Windows API internals is a long interest of mine; this one is the native CLR layer the managed field write in shedskin does not reach, and the slot was already resolved every time a .NET host first scanned.
+CLR resolves `amsi!AmsiScanBuffer` once, caches the pointer in its own `.data` section, and dispatches every DotNet-host AMSI scan through that pointer for the rest of the process. Overwrite the pointer, change what Defender runs. Flip the pointer back, change it back. The whole native primitive is one 8-byte write plus a 15-byte stub that fills the result pointer with 1 and returns `S_OK`. shedskin's managed field write never reaches here; this is the layer underneath, callable from any .NET host that touches an AMSI-integrated API.
 
 > **Artifact bundle, live at [`/artifacts/clr-amsi-slot/`]({{ '/artifacts/clr-amsi-slot/' | relative_url }}).** The bundle ships the `slot-per-arm.ps1` reproduction and the 2026-10-29 live-run transcript with per-arm slot pointer values. Not yet included: the radare2 session log that locates `0x929870` on a fresh clr.dll and the coreclr sibling measurement; those are flagged as pending in-post.
 
