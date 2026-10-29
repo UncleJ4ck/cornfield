@@ -1,0 +1,35 @@
+# Reproduction attempt of the §dispatcher-claim-measured-directly C3 row
+# Captured 2026-10-29 on win11 26200.8037, Defender sig 1.459.576.0
+# Direct AmsiScanBuffer under 5 appnames x 2 encodings x 4 contentNames x 2 session states
+
+# Content under test (reconstructed at runtime from char-codes, no literal in script source):
+#   function Invoke-Mimikatz { $dump='sekurlsa::logonpasswords' }
+
+# Result: result=1 on ALL arms tested.
+appname=PowerShell_X     cn=probe                       session=False  result=1
+appname=PowerShell_X     cn=probe                       session=True   result=1
+appname=PowerShell_X     cn=ScriptBlock_01              session=False  result=1
+appname=PowerShell_X     cn=ScriptBlock_01              session=True   result=1
+appname=PowerShell_X     cn=powershell_C:\user          session=False  result=1
+appname=PowerShell_X     cn=powershell_C:\user          session=True   result=1
+appname=PowerShell_X     cn=                            session=False  result=1
+appname=PowerShell_X     cn=                            session=True   result=1
+appname=PowerShell_test  (same shape)                                  result=1
+appname=x                (same shape)                                  result=1
+appname=OTHER            (same shape)                                  result=1
+appname=MyAmsiScanner    (same shape)                                  result=1
+
+# Same under UTF-16LE encoding (len=122 bytes vs ASCII len=61).
+
+# Interpretation:
+# - The PS-pack Mimikatz-pattern sig does NOT fire via direct AmsiScanBuffer
+#   from managed code on this sig DB, regardless of appname. The sig fires
+#   through SMA's internal ScanContent path only.
+# - The dispatcher routing effect is observable at the IEX level
+#   (P1 pre-shedskin blocks, P3 post-shedskin executes; see §live-end-to-end-cycle)
+#   because SMA's path triggers the sig correctly.
+# - The §dispatcher-claim-measured-directly matrix cell "C3 under PowerShell_X -> DET"
+#   is not reproducible via direct scan on this sig state. The IEX differential
+#   is the authoritative live receipt.
+
+sig=1.459.576.0 engine=1.1.26080.3 build=10.0.26200
