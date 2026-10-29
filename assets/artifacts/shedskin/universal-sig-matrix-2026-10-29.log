@@ -1,0 +1,30 @@
+# Universal-signature x appname cross matrix on current Defender
+# Captured 2026-10-29 on win11 26200.8037, Defender sig 1.459.576.0
+# 5 payloads x 9 appnames, fresh AmsiInitialize for each arm, direct AmsiScanBuffer
+
+=== EICAR_ascii (68 bytes) ===                                   # TRULY UNIVERSAL: fires everywhere
+  under appname=fresh                 result=32768
+  under appname=PowerShell_test       result=32768
+  under appname=x                     result=32768
+  under appname=MyAmsiScanner         result=32768
+  under appname=DotNet                result=32768
+  under appname=OFFICE_VBA            result=32768
+  under appname=VBScript              result=32768
+  under appname=JScript               result=32768
+  under appname=coreclr               result=32768
+
+=== EICAR_utf16 (136 bytes) ===                                  # same: universal both encodings
+  under every appname tested          result=32768
+
+=== AMSI Test Sample GUID (54 ascii / 108 utf16 bytes) ===       # NOT universal on this sig DB
+  ascii & utf16, under every appname  result=1                   # does NOT fire at all under current Defender
+
+=== Rastamouse one-liner (264 bytes utf16) ===                   # TRULY UNIVERSAL
+  under every appname tested          result=32768
+
+# Verdict: EICAR and Rastamouse-one-liner carry sigs that live in EVERY pack
+# (OTHER + PS + VBScript + JScript + DotNet + coreclr + OFFICE_VBA + Excel).
+# No appname-routing primitive (shedskin, Dosxuz, etc.) can bypass them.
+# A universal AMSI bypass needs a different layer: SMA Gate 1 flip (Rastamouse
+# detectable), native patch (Korkos/Khoury/Fazel code-page writes), or hook.
+# shedskin stays scope-limited to PS-pack-exclusive sigs by design.
