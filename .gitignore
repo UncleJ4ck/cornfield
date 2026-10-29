@@ -10,3 +10,4 @@ DESIGN.md
 .serena/
 mitm_mcp_traffic.db
 *.db
+.claude/

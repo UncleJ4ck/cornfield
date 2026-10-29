@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 820" font-family="JetBrains Mono, monospace" font-size="13">
+  <style>
+    .box { fill: #1a1d1a; stroke: #767e22; stroke-width: 1.5; }
+    .alpc { fill: #2a1818; stroke: #c97a6d; stroke-width: 1.5; }
+    .ppl  { fill: #1a1d2a; stroke: #6d8ac9; stroke-width: 1.5; }
+    .lbl  { fill: #d6d6d6; }
+    .mono { fill: #c8aa66; font-size: 11px; }
+    .arrow { stroke: #9a9a9a; stroke-width: 1.2; fill: none; marker-end: url(#ah); }
+    .hit   { stroke: #c97a6d; stroke-width: 2.0; fill: none; marker-end: url(#ah); }
+    .title { fill: #e8e8e8; font-weight: bold; font-size: 15px; }
+    text { fill: #d6d6d6; }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9a9a9a"/>
+    </marker>
+  </defs>
+  <rect width="980" height="820" fill="#0e100e"/>
+  <text x="20" y="30" class="title">shedskin: full AMSI dispatch, client to pack loader</text>
+  <text x="20" y="50" class="mono">powershell.exe (standard user, Full Language Mode)</text>
+
+  <rect x="30" y="70" width="420" height="60" class="box"/>
+  <text x="45" y="92" class="title">SMA.dll (managed)</text>
+  <text x="45" y="110" class="mono">CompiledScriptBlockData.PerformSecurityChecks</text>
+  <text x="45" y="124" class="mono">  AmsiUtils.ScanContent  (Gate 1 amsiInitFailed, Gate 2 amsiContext)</text>
+
+  <rect x="30" y="150" width="420" height="55" class="box"/>
+  <text x="45" y="172" class="title">amsi.dll (native, in-process)</text>
+  <text x="45" y="190" class="mono">AmsiScanBuffer  walks AmsiContext.providers aggregator</text>
+
+  <rect x="30" y="225" width="420" height="55" class="box"/>
+  <text x="45" y="247" class="title">MpOav.dll (Defender provider, in-process)</text>
+  <text x="45" y="265" class="mono">CComMpOfficeAV::Scan  CAmsiProviderHolder singleton  vtable[0x80/8]</text>
+
+  <rect x="30" y="300" width="420" height="55" class="box"/>
+  <text x="45" y="322" class="title">MpClient.dll (NDR marshaller, in-process)</text>
+  <text x="45" y="340" class="mono">MpAmsiScan  opnum 0x5f  rpcrt4!NdrClientCall3  ncalrpc</text>
+
+  <path class="arrow" d="M 240 130 L 240 150"/>
+  <path class="arrow" d="M 240 205 L 240 225"/>
+  <path class="arrow" d="M 240 280 L 240 300"/>
+
+  <rect x="30" y="375" width="420" height="40" class="alpc"/>
+  <text x="45" y="400" class="title">ALPC boundary  user mode to PPL</text>
+  <path class="arrow" d="M 240 355 L 240 375"/>
+
+  <rect x="500" y="70" width="450" height="60" class="ppl"/>
+  <text x="515" y="92" class="title">MsMpEng.exe (PPL ANTIMALWARE)</text>
+  <text x="515" y="110" class="mono">server NDR unmarshal opnum 0x5f</text>
+  <text x="515" y="124" class="mono">dynamic LoadLibrary mpengine.dll + GetProcAddress __rsignal</text>
+
+  <path class="arrow" d="M 450 395 C 580 395, 650 300, 650 130"/>
+
+  <rect x="500" y="150" width="450" height="200" class="box"/>
+  <text x="515" y="172" class="title">mpengine.dll (18.5 MB engine)</text>
+  <text x="515" y="192" class="mono">__rsignal (ord 16) @ 0x18003b020</text>
+  <text x="515" y="208" class="mono">  rsignal (ord 17) @ 0x18031fa90   sibling entry</text>
+  <text x="515" y="226" class="mono">    fcn.18003b090 (4059 B)</text>
+  <text x="515" y="242" class="mono">      fcn.18003c1f0 (9332 B, main scan dispatcher)</text>
+  <text x="515" y="258" class="mono">        fcn.18002a9d0</text>
+  <text x="515" y="274" class="mono">          fcn.180325dd0 (2343 B)</text>
+  <text x="515" y="290" class="mono">            fcn.18032458c (3459 B)</text>
+  <text x="515" y="310" class="mono">              appname wcsncmp @ 0x180324808  needle "PowerShell_" len 11</text>
+  <text x="515" y="328" class="mono">              AVX2 vpcmpeqw, scalar tail cmp word, no tolower, no fold</text>
+
+  <rect x="500" y="370" width="220" height="55" class="box"/>
+  <text x="515" y="392" class="title">match: PS pack</text>
+  <text x="515" y="410" class="mono">pack loader @ 0x18032bbfa</text>
+
+  <rect x="730" y="370" width="220" height="55" class="box"/>
+  <text x="745" y="392" class="title">miss: OTHER / sibling host</text>
+  <text x="745" y="410" class="mono">fall-through to next branch</text>
+
+  <path class="hit" d="M 530 345 L 530 370"/>
+  <path class="arrow" d="M 920 345 L 920 370"/>
+
+  <rect x="500" y="440" width="450" height="55" class="box"/>
+  <text x="515" y="462" class="title">pack runs against buffer</text>
+  <text x="515" y="480" class="mono">returns AMSI_RESULT 32768 DETECTED / 1 CLEAN</text>
+  <path class="arrow" d="M 630 425 L 630 440"/>
+  <path class="arrow" d="M 820 425 L 820 440"/>
+
+  <rect x="30" y="520" width="920" height="100" class="box"/>
+  <text x="45" y="542" class="title">shedskin writes 8 bytes on the client side</text>
+  <text x="45" y="562" class="mono">AmsiInitialize('x', out newCtx)   mint a new context whose appname is NOT "PowerShell_..."</text>
+  <text x="45" y="578" class="mono">[AmsiUtils]::amsiContext.SetValue($null, newCtx)   reflection write to the SMA static field</text>
+  <text x="45" y="594" class="mono">AmsiUninitialize(oldCtx)   cosmetic cleanup; the swap already decides the outcome</text>
+  <text x="45" y="610" class="mono">result: every subsequent AmsiScanBuffer carries appname "x", takes the miss branch</text>
+
+  <rect x="30" y="640" width="920" height="55" class="box"/>
+  <text x="45" y="662" class="title">M-02 silent-allow bug: PerformSecurityChecks IL compares result == 32768 exactly</text>
+  <text x="45" y="680" class="mono">silent-allow set [20480..32767] union [32769..INT_MAX]</text>
+  <text x="45" y="694" class="mono">reachable via a malicious AMSI provider returning any HRESULT outside {32768, 16384..20479}</text>
+
+  <text x="20" y="730" class="mono">clients that reach the dispatch:  powershell.exe, pwsh.exe, cscript.exe, wscript.exe, Office hosts,</text>
+  <text x="20" y="746" class="mono">Edge/WebView2, Exchange, SharePoint, Skype for Business, VSS, WMI, consent.exe (UAC)</text>
+  <text x="20" y="770" class="mono">reach cost shedskin:   0 kernel, 0 code-page write, 0 hook, 0 race, standard user, 3 managed APIs</text>
+  <text x="20" y="786" class="mono">reach cost Korkos:     0 kernel, 1 VirtualProtect + inline patch of MpOav Scan vtable</text>
+  <text x="20" y="802" class="mono">reach cost Rastamouse: 0 kernel, 0 code-page write, 1 managed reflection write of amsiInitFailed</text>
+</svg>

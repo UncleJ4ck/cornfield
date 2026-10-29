@@ -1,0 +1,19 @@
+=== oracle ctrl_start (EICAR) ===
+ctrl_start               result=32768
+=== arm A: Mimikatz-known content ALONE ===
+A_mimikatz_alone         result=32769
+=== arm B: marker ALONE ===
+B_marker_alone           result=32769
+=== arm C: Mimikatz + marker, same buffer ===
+C_mimi_plus_marker       result=32769
+=== oracle ctrl_end (EICAR) ===
+ctrl_end                 result=32768
+providers under HKLM:
+  {2781761E-28E0-4109-99FE-B9D127C57AFE}  Microsoft Defender (MpOav)
+  {A1B19999-DEAD-BEEF-CAFE-000000001234}  AmsiDevProvider iter19 lab
+sig   : 1.459.576.0
+engine: 1.1.26080.3
+build : 10.0.26200
+Note: aggregator-only values do NOT prove arm C fired both providers.
+Live arm-B claim: lab-registered provider CAN return 32769 through
+the aggregator when scanned alone on its chosen marker. CONFIRMED.

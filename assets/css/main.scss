@@ -724,7 +724,9 @@ a.sh-label {
     border-left: 3px solid $acc-dim;
     border-radius: 0 4px 4px 0;
     margin: 1.75rem 0;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
     position: relative;
 
     pre {
@@ -948,20 +950,22 @@ a.sh-label {
 // Rouge syntax tokens — warm palette matching the crimson theme
 .highlight {
   .c,  .c1, .cm, .cs { color: #9aa07e; font-style: italic; }
-  .k,  .kd, .kn, .kp, .kr, .kt { color: #c9d156; font-weight: 600; }
+  .k,  .kd, .kn, .kp, .kr, .kt { color: $acc; font-weight: 600; }  // olive accent
   .s,  .s1, .s2, .sb, .sc, .sd, .si, .sx { color: #98c4aa; }
   .n,  .nn { color: $text; }
-  .nb, .bp { color: #c4a882; }
-  .nf, .fm, .nc { color: #d4ae7a; }
-  .mi, .mf, .mh, .mo { color: #c49060; }
+  // Canonical palette: text #e2ddcd, text-sec #989484, acc #b3bd33, acc-dim #767e22,
+  // tan #c8aa66, ok #98c4aa, num #c49060, err #c94c4c, comment #9aa07e.
+  .nb, .bp { color: #c8aa66; }                 // tan: builtins
+  .nf, .fm, .nc { color: #c8aa66; }            // tan: functions, methods, classes (unified)
+  .mi, .mf, .mh, .mo { color: #c49060; }       // num: integers, floats, hex, octal
   .o,  .ow { color: $text-sec; }
   .p  { color: $text-sec; }
   .na { color: $acc-dim; }
   .nt { color: $acc-dim; }
-  .err { color: #c94c4c; background: none; }
-  .gd { color: #c94c4c; }
-  .gi { color: #98c4aa; }
-  .gh { color: $acc; font-weight: 700; }
+  .err { color: #c94c4c; background: none; }   // err
+  .gd { color: #c94c4c; }                      // diff removal uses the err red
+  .gi { color: #98c4aa; }                      // diff add uses the ok green
+  .gh { color: $acc; font-weight: 700; }       // section header: olive accent
   // shell-session tokens (Rouge `console` lexer, future-proof)
   .gp { color: $acc; font-weight: 600; }
   .go { color: $text-sec; }
@@ -971,12 +975,13 @@ a.sh-label {
 // Terminal-block enhancement: main.js tags untagged shell blocks so the command
 // line pops, hashes/offsets tint, and inline annotations recede. Rouge-coloured
 // blocks (language-tagged) are left to the token theme above and never touched.
-.prose .highlight .tk-cmd { color: $acc; font-weight: 600; }
-.prose .highlight .tk-hex { color: #c49060; }
-.prose .highlight .tk-ann { color: #9aa07e; font-style: italic; }   // readable muted (was #514f43, near-invisible)
-.prose .highlight .tk-str { color: #98c4aa; }
+// All four tokens draw from the canonical palette.
+.prose .highlight .tk-cmd { color: $acc; font-weight: 600; }  // olive accent
+.prose .highlight .tk-hex { color: #c49060; }                 // num orange
+.prose .highlight .tk-ann { color: #9aa07e; font-style: italic; }  // muted olive comment
+.prose .highlight .tk-str { color: #98c4aa; }                 // ok green
 
-// Mermaid diagrams: center, scroll horizontally when wider than the column.
+// Mermaid diagrams: center on wide viewports, scroll horizontally on narrow ones.
 .prose .mermaid {
   display: flex;
   justify-content: center;
@@ -988,6 +993,44 @@ a.sh-label {
   height: auto;
   max-width: 100%;
   display: block;
+}
+
+// On narrow viewports keep the figure at its native width so the parent scrolls
+// horizontally instead of compressing labels to unreadable sizes. A right-edge
+// gradient fade cues the reader that content continues past the viewport.
+@media (max-width: 720px) {
+  .prose .mermaid svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .prose pre {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .prose pre code {
+    white-space: pre;
+    word-break: normal;
+  }
+  .prose table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .prose p code,
+  .prose li code,
+  .prose p a,
+  .prose li a {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .post-subtitle,
+  .post-subtitle code,
+  .tldr code {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
 }
 
 @media (max-width: 640px) {

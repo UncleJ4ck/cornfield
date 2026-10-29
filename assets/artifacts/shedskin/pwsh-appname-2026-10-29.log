@@ -1,0 +1,9 @@
+pwsh 7.4.21 live appname captured via logman on Microsoft-Antimalware-Scan-Interface
+provider GUID {2A576B87-09A7-520E-C21A-4942F0271D67}, parsed with tracerpt.
+
+appname='PowerShell_C:\Program Files\PowerShell\7\pwsh.exe_7.4.21 SHA: 0d63e962b5c2236d981d593a78acf88ed96748f6'  scanResult=1  contentName=''  size=66
+appname='PowerShell_C:\Program Files\PowerShell\7\pwsh.exe_7.4.21 SHA: 0d63e962b5c2236d981d593a78acf88ed96748f6'  scanResult=1  contentName=''  size=18
+
+pwsh SMA.dll SHA-256: 8B97A3E495970FFF7AB32B8C739E2397B49584FBAB4749595ED72E3211B2A68A
+sig  : 1.459.576.0
+build: 10.0.26200
