@@ -317,13 +317,23 @@ detection:
 
 Captured 2026-10-26 on Win11 26200.8037, Defender signature 1.459.576.0. Three arms invoked through the CLR slot pointer by reading `[clr + 0x929870]` on each arm and building a managed delegate from the current slot value (the shape in §reproduction above). `A_baseline` reads the slot and gets `amsi!AmsiScanBuffer`, scans EICAR, returns `result=32768`. `B_patched` reads the slot after the 15-byte stub takes it, scans EICAR, returns `result=1` (the stub writes `AMSI_RESULT_NOT_DETECTED` into the sixth-arg result pointer and returns `S_OK` without touching the buffer or calling amsi.dll). `C_restored` reads the slot after the original pointer is written back, gets `amsi!AmsiScanBuffer` again, returns `result=32768`.
 
-**What the image below shows.** The capture is from the recomputed cycle (2026-10-29, win11 26200, Defender signature 1.459.576.0, engine 1.1.26080.3) and prints `slot=0x...` beside each arm. The baseline and restored arms read `slot=0x7ffd36e08160` (inside `amsi.dll`'s export range); the patched arm reads `slot=0x15553a70000` (the attacker-allocated stub page). EICAR controls fire at both ends of the cycle to prove the oracle stayed alive.
+The recomputed cycle (2026-10-29, win11 26200, Defender signature 1.459.576.0, engine 1.1.26080.3) prints `slot=0x...` beside each arm, so the pointer value itself is in the transcript rather than inferred. The baseline and restored arms read `slot=0x7ffd36e08160` (inside `amsi.dll`'s export range); the patched arm reads `slot=0x15553a70000` (the attacker-allocated stub page). EICAR controls fire at both ends to prove the oracle stayed alive.
 
-![CLR AMSI slot cycle on win11 26200, Defender sig 1.459.576.0: ctrl_start result=32768, A_baseline slot=0x7ffd36e08160 result=32768, B_patched slot=0x15553a70000 result=1, C_restored slot=0x7ffd36e08160 result=32768, ctrl_end result=32768. The per-arm slot pointer prints are in the image; A and C point into amsi.dll, B points into the attacker-allocated stub page.]({{ '/assets/img/posts/clr-amsi-slot/live.png' | relative_url }})
+```
+PS C:\Users\Public> .\clr-slot.ps1
+slot addr = 0x7ffd28449870
+orig fn   = 0x7ffd36e08160   (inside amsi.dll)
+ctrl_start   slot=0x7ffd36e08160  result=32768  (oracle alive)
+A_baseline   slot=0x7ffd36e08160  result=32768  DETECTED  (slot inside amsi.dll)
+B_patched    slot=0x15553a70000   result=1      CLEAN     (slot inside stub page)
+C_restored   slot=0x7ffd36e08160  result=32768  DETECTED  (slot restored to amsi.dll)
+ctrl_end     slot=0x7ffd36e08160  result=32768  (oracle alive)
+sig   : 1.459.576.0
+engine: 1.1.26080.3
+build : 10.0.26200
+```
 
-<video controls preload="metadata" style="width: 100%; max-width: 960px; border: 1px solid #767e22; background: #0e100e;">
-  <source src="{{ '/assets/img/posts/clr-amsi-slot/live.mp4' | relative_url }}" type="video/mp4">
-</video>
+Raw log in the bundle at [`live-run-2026-10-29.log`]({{ '/assets/artifacts/clr-amsi-slot/live-run-2026-10-29.log' | relative_url }}); the per-arm script is [`slot-per-arm.ps1`]({{ '/assets/artifacts/clr-amsi-slot/slot-per-arm.ps1' | relative_url }}). (An earlier draft rendered this cycle as a stylized PNG plus a short MP4 of the same card; both were typeset versions of the lines above, not screen recordings, so they are removed in favor of the raw log.)
 
 ## see also
 
